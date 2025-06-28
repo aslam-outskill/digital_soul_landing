@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import Logo from './Logo';
 import AuthModal from './auth/AuthModal';
 
 const Navigation = () => {
+  const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; view: 'login' | 'register' }>({
@@ -16,7 +18,7 @@ const Navigation = () => {
     { label: 'Demo', href: '#demo' },
     { label: 'Stories', href: '#testimonials' },
     { label: 'Privacy', href: '#trust' },
-    { label: 'FAQ', href: '#faq' },
+    { label: 'FAQ', href: '/faq', isRoute: true },
     { label: 'Feedback', href: '#feedback' }
   ];
 
@@ -29,10 +31,14 @@ const Navigation = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const scrollToSection = (href: string) => {
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+  const handleNavigation = (href: string, isRoute?: boolean) => {
+    if (isRoute) {
+      navigate(href);
+    } else {
+      const element = document.querySelector(href);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
     }
     setIsMobileMenuOpen(false);
   };
@@ -52,17 +58,19 @@ const Navigation = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo - Always visible with consistent styling */}
-            <Logo 
-              className="w-8 h-8" 
-              textClassName="text-xl text-gray-900"
-            />
+            <button onClick={() => navigate('/')}>
+              <Logo 
+                className="w-8 h-8" 
+                textClassName="text-xl text-gray-900"
+              />
+            </button>
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center space-x-6">
               {navItems.map((item) => (
                 <button
                   key={item.label}
-                  onClick={() => scrollToSection(item.href)}
+                  onClick={() => handleNavigation(item.href, item.isRoute)}
                   className="font-medium text-gray-700 hover:text-purple-600 transition-colors duration-300"
                 >
                   {item.label}
@@ -108,7 +116,7 @@ const Navigation = () => {
               {navItems.map((item) => (
                 <button
                   key={item.label}
-                  onClick={() => scrollToSection(item.href)}
+                  onClick={() => handleNavigation(item.href, item.isRoute)}
                   className="block w-full text-left px-4 py-3 text-gray-700 hover:bg-purple-50 hover:text-purple-600 rounded-lg font-medium transition-colors duration-300"
                 >
                   {item.label}

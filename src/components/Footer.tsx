@@ -1,9 +1,11 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Twitter, Facebook, Instagram } from 'lucide-react';
 import Logo from './Logo';
 
 const Footer = () => {
+  const navigate = useNavigate();
+
   const links = {
     company: [
       { name: 'About', href: '#' },
@@ -12,7 +14,7 @@ const Footer = () => {
       { name: 'Blog', href: '#' }
     ],
     support: [
-      { name: 'Help Center', href: '#faq' },
+      { name: 'Help Center', href: '/faq', isRoute: true },
       { name: 'Contact Us', href: 'mailto:contact@digitalsoulapp.ch' },
       { name: 'Send Feedback', href: '#feedback' },
       { name: 'Community', href: '#' }
@@ -32,8 +34,10 @@ const Footer = () => {
     { icon: <Mail className="w-5 h-5" />, href: 'mailto:contact@digitalsoulapp.ch', label: 'Email' }
   ];
 
-  const handleLinkClick = (href: string) => {
-    if (href.startsWith('#')) {
+  const handleLinkClick = (href: string, isRoute?: boolean) => {
+    if (isRoute) {
+      navigate(href);
+    } else if (href.startsWith('#')) {
       const element = document.querySelector(href);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth' });
@@ -106,7 +110,7 @@ const Footer = () => {
               {links.support.map((link, index) => (
                 <li key={index}>
                   <button
-                    onClick={() => handleLinkClick(link.href)}
+                    onClick={() => handleLinkClick(link.href, link.isRoute)}
                     className="text-gray-400 hover:text-white transition-colors duration-300 text-left"
                   >
                     {link.name}
@@ -121,21 +125,12 @@ const Footer = () => {
             <ul className="space-y-3">
               {links.legal.map((link, index) => (
                 <li key={index}>
-                  {link.isRoute ? (
-                    <Link
-                      to={link.href}
-                      className="text-gray-400 hover:text-white transition-colors duration-300"
-                    >
-                      {link.name}
-                    </Link>
-                  ) : (
-                    <a
-                      href={link.href}
-                      className="text-gray-400 hover:text-white transition-colors duration-300"
-                    >
-                      {link.name}
-                    </a>
-                  )}
+                  <button
+                    onClick={() => handleLinkClick(link.href, link.isRoute)}
+                    className="text-gray-400 hover:text-white transition-colors duration-300 text-left"
+                  >
+                    {link.name}
+                  </button>
                 </li>
               ))}
             </ul>

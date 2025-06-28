@@ -6,7 +6,6 @@ import HowItWorks from '../components/HowItWorks';
 import InteractiveDemo from '../components/InteractiveDemo';
 import Testimonials from '../components/Testimonials';
 import Trust from '../components/Trust';
-import FAQ from '../components/FAQ';
 import FeedbackForm from '../components/FeedbackForm';
 import FinalCTA from '../components/FinalCTA';
 import Footer from '../components/Footer';
@@ -21,7 +20,6 @@ const HomePage = () => {
       <InteractiveDemo />
       <Testimonials />
       <Trust />
-      <FAQ />
       <FeedbackForm />
       <FinalCTA />
       <Footer />
