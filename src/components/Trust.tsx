@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Shield, Lock, Users, Award, Check } from 'lucide-react';
+import PrivacyPolicy from './PrivacyPolicy';
 
 const Trust = () => {
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+
   const features = [
     {
       icon: <Shield className="w-8 h-8" />,
@@ -32,6 +35,10 @@ const Trust = () => {
     "Option to download or delete everything anytime",
     "Secure inheritance features for family access"
   ];
+
+  if (showPrivacyPolicy) {
+    return <PrivacyPolicy onBack={() => setShowPrivacyPolicy(false)} />;
+  }
 
   return (
     <section id="trust" className="py-20 bg-gray-900 text-white">
@@ -90,7 +97,10 @@ const Trust = () => {
           <p className="text-gray-400 mb-6">
             Questions about privacy or security?
           </p>
-          <button className="text-purple-400 hover:text-purple-300 font-medium underline underline-offset-4 transition-colors">
+          <button 
+            onClick={() => setShowPrivacyPolicy(true)}
+            className="text-purple-400 hover:text-purple-300 font-medium underline underline-offset-4 transition-colors"
+          >
             Read our full Privacy Policy
           </button>
         </div>
