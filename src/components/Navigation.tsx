@@ -77,12 +77,7 @@ const Navigation = () => {
                 </button>
               ))}
               <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => openAuthModal('login')}
-                  className="font-medium text-gray-700 hover:text-purple-600 transition-colors duration-300"
-                >
-                  Sign In
-                </button>
+
                 <button
                   onClick={() => openAuthModal('register')}
                   className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:shadow-lg transform hover:scale-105 transition-all duration-300"
