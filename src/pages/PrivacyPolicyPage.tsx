@@ -1,11 +1,11 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Shield, Lock, Users, Eye, FileText, Heart, AlertTriangle, Phone, Mail } from 'lucide-react';
+import Logo from '../components/Logo';
 
-interface PrivacyPolicyProps {
-  onBack: () => void;
-}
+const PrivacyPolicyPage = () => {
+  const navigate = useNavigate();
 
-const PrivacyPolicy = ({ onBack }: PrivacyPolicyProps) => {
   const sections = [
     {
       id: 'overview',
@@ -355,80 +355,90 @@ const PrivacyPolicy = ({ onBack }: PrivacyPolicyProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <button
-            onClick={onBack}
-            className="flex items-center space-x-2 text-gray-600 hover:text-purple-600 mb-6 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to home</span>
-          </button>
-          
-          <div className="text-center">
-            <div className="inline-flex items-center space-x-2 bg-purple-100 rounded-full px-6 py-3 mb-6">
-              <Shield className="w-5 h-5 text-purple-600" />
-              <span className="text-sm font-medium text-purple-800">Privacy & Ethics</span>
-            </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-              Privacy Policy
-            </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Your privacy and the ethical handling of your digital legacy are our highest priorities. 
-              This policy explains how we protect and honor your trust.
-            </p>
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <Logo className="w-8 h-8" textClassName="text-xl text-gray-900" />
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-2 text-gray-600 hover:text-purple-600 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to home</span>
+            </button>
           </div>
         </div>
+      </nav>
 
-        {/* Table of Contents */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Table of Contents</h2>
-          <div className="grid md:grid-cols-2 gap-2">
+      <div className="pt-16">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="text-center">
+              <div className="inline-flex items-center space-x-2 bg-purple-100 rounded-full px-6 py-3 mb-6">
+                <Shield className="w-5 h-5 text-purple-600" />
+                <span className="text-sm font-medium text-purple-800">Privacy & Ethics</span>
+              </div>
+              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+                Privacy Policy
+              </h1>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                Your privacy and the ethical handling of your digital legacy are our highest priorities. 
+                This policy explains how we protect and honor your trust.
+              </p>
+            </div>
+          </div>
+
+          {/* Table of Contents */}
+          <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Table of Contents</h2>
+            <div className="grid md:grid-cols-2 gap-2">
+              {sections.map((section) => (
+                <a
+                  key={section.id}
+                  href={`#${section.id}`}
+                  className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="text-purple-600">{section.icon}</div>
+                  <span className="text-gray-700 hover:text-purple-600">{section.title}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+
+          {/* Sections */}
+          <div className="space-y-8">
             {sections.map((section) => (
-              <a
-                key={section.id}
-                href={`#${section.id}`}
-                className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <div className="text-purple-600">{section.icon}</div>
-                <span className="text-gray-700 hover:text-purple-600">{section.title}</span>
-              </a>
+              <div key={section.id} id={section.id} className="bg-white rounded-2xl shadow-lg p-8">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                    {section.icon}
+                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900">{section.title}</h2>
+                </div>
+                {section.content}
+              </div>
             ))}
           </div>
-        </div>
 
-        {/* Sections */}
-        <div className="space-y-8">
-          {sections.map((section) => (
-            <div key={section.id} id={section.id} className="bg-white rounded-2xl shadow-lg p-8">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
-                  {section.icon}
-                </div>
-                <h2 className="text-2xl font-bold text-gray-900">{section.title}</h2>
-              </div>
-              {section.content}
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div className="mt-12 bg-purple-50 rounded-2xl p-8 text-center">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">
-            Document Updates
-          </h3>
-          <p className="text-gray-600 mb-4">
-            This Privacy Policy is reviewed and updated quarterly to ensure continued compliance 
-            with evolving privacy laws, ethical standards, and user needs.
-          </p>
-          <p className="text-sm text-gray-500">
-            Last updated: January 2024 • Next review: April 2024
-          </p>
+          {/* Footer */}
+          <div className="mt-12 bg-purple-50 rounded-2xl p-8 text-center">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">
+              Document Updates
+            </h3>
+            <p className="text-gray-600 mb-4">
+              This Privacy Policy is reviewed and updated quarterly to ensure continued compliance 
+              with evolving privacy laws, ethical standards, and user needs.
+            </p>
+            <p className="text-sm text-gray-500">
+              Last updated: January 2024 • Next review: April 2024
+            </p>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-export default PrivacyPolicy;
+export default PrivacyPolicyPage;

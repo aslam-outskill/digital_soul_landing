@@ -1,31 +1,18 @@
 import React from 'react';
-import Navigation from './components/Navigation';
-import Hero from './components/Hero';
-import EmotionalHook from './components/EmotionalHook';
-import HowItWorks from './components/HowItWorks';
-import InteractiveDemo from './components/InteractiveDemo';
-import Testimonials from './components/Testimonials';
-import Trust from './components/Trust';
-import FAQ from './components/FAQ';
-import FeedbackForm from './components/FeedbackForm';
-import FinalCTA from './components/FinalCTA';
-import Footer from './components/Footer';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import HomePage from './pages/HomePage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 
 function App() {
   return (
-    <div className="min-h-screen">
-      <Navigation />
-      <Hero />
-      <EmotionalHook />
-      <HowItWorks />
-      <InteractiveDemo />
-      <Testimonials />
-      <Trust />
-      <FAQ />
-      <FeedbackForm />
-      <FinalCTA />
-      <Footer />
-    </div>
+    <Router>
+      <div className="min-h-screen">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+        </Routes>
+      </div>
+    </Router>
   );
 }
 
