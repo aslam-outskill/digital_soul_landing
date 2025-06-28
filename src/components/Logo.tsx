@@ -4,7 +4,7 @@ const Logo = ({ className = "w-8 h-8", textClassName = "text-xl" }: { className?
   return (
     <div className="flex items-center space-x-2">
       <img 
-        src="/1.png" 
+        src="/generated-image.png" 
         alt="Digital Soul Logo" 
         className={`${className} object-contain`}
       />
