@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Shield, Lock, Users, Eye, FileText, Heart, AlertTriangle, Phone, Mail } from 'lucide-react';
 import Logo from '../components/Logo';
 
 const PrivacyPolicyPage = () => {
   const navigate = useNavigate();
+
+  // Scroll to top when component mounts
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const sections = [
     {
