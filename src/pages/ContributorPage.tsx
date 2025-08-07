@@ -1,0 +1,610 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { 
+  ArrowLeft, 
+  Heart, 
+  User, 
+  MessageCircle, 
+  Camera, 
+  Mic, 
+  Upload,
+  X,
+  Check,
+  Plus,
+  Star,
+  Calendar,
+  MapPin,
+  Users,
+  FileText,
+  Music,
+  BookOpen,
+  Save,
+  Send
+} from 'lucide-react';
+import Logo from '../components/Logo';
+
+interface ContributionData {
+  personalInfo: {
+    name: string;
+    relationship: string;
+    email: string;
+  };
+  memories: {
+    stories: string[];
+    photos: File[];
+    voiceRecordings: File[];
+  };
+  personality: {
+    traits: string[];
+    interests: string[];
+    values: string[];
+  };
+  relationships: {
+    familyMembers: string[];
+    friends: string[];
+    significantEvents: string[];
+  };
+}
+
+const ContributorPage = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  
+  const [contributionData, setContributionData] = useState<ContributionData>({
+    personalInfo: {
+      name: '',
+      relationship: '',
+      email: ''
+    },
+    memories: {
+      stories: [],
+      photos: [],
+      voiceRecordings: []
+    },
+    personality: {
+      traits: [],
+      interests: [],
+      values: []
+    },
+    relationships: {
+      familyMembers: [],
+      friends: [],
+      significantEvents: []
+    }
+  });
+
+  // Get invitation data from URL params
+  const invitationId = searchParams.get('invitation');
+  const personaName = searchParams.get('name') || 'Sarah';
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  const handleInputChange = (section: keyof ContributionData, field: string, value: any) => {
+    setContributionData(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: value
+      }
+    }));
+  };
+
+  const addArrayItem = (section: keyof ContributionData, field: string, value: string) => {
+    if (value.trim()) {
+      setContributionData(prev => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [field]: [...(prev[section] as any)[field], value.trim()]
+        }
+      }));
+    }
+  };
+
+  const removeArrayItem = (section: keyof ContributionData, field: string, index: number) => {
+    setContributionData(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: (prev[section] as any)[field].filter((_: any, i: number) => i !== index)
+      }
+    }));
+  };
+
+  const handleFileUpload = (section: keyof ContributionData, field: string, files: FileList | null) => {
+    if (files) {
+      const fileArray = Array.from(files);
+      setContributionData(prev => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [field]: [...(prev[section] as any)[field], ...fileArray]
+        }
+      }));
+    }
+  };
+
+  const removeFile = (section: keyof ContributionData, field: string, index: number) => {
+    setContributionData(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: (prev[section] as any)[field].filter((_: any, i: number) => i !== index)
+      }
+    }));
+  };
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    setIsSubmitting(false);
+    setSubmitted(true);
+  };
+
+  const steps = [
+    { id: 1, title: 'Personal Info', icon: User },
+    { id: 2, title: 'Memories & Stories', icon: FileText },
+    { id: 3, title: 'Personality', icon: Heart },
+    { id: 4, title: 'Relationships', icon: Users },
+    { id: 5, title: 'Review & Submit', icon: Send }
+  ];
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <Logo />
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center space-x-2 text-gray-600 hover:text-purple-600 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to home</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+
+        <div className="pt-20 pb-8">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="bg-white rounded-2xl shadow-lg p-12">
+              <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Check className="w-10 h-10 text-green-600" />
+              </div>
+              
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">
+                Thank You for Contributing!
+              </h1>
+              
+              <p className="text-xl text-gray-600 mb-8">
+                Your contributions have been successfully submitted and will help enrich {personaName}'s digital soul.
+              </p>
+              
+              <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-8">
+                <h3 className="font-semibold text-green-900 mb-3">What happens next?</h3>
+                <ul className="text-green-800 space-y-2 text-left">
+                  <li className="flex items-center">
+                    <Check className="w-4 h-4 mr-2 text-green-600" />
+                    Your information will be reviewed and integrated
+                  </li>
+                  <li className="flex items-center">
+                    <Check className="w-4 h-4 mr-2 text-green-600" />
+                    {personaName}'s digital persona will be updated
+                  </li>
+                  <li className="flex items-center">
+                    <Check className="w-4 h-4 mr-2 text-green-600" />
+                    You'll receive a notification when it's complete
+                  </li>
+                </ul>
+              </div>
+              
+              <button
+                onClick={() => navigate('/')}
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all duration-300"
+              >
+                Return to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <Logo />
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-2 text-gray-600 hover:text-purple-600 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to home</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div className="pt-20 pb-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-purple-100 text-purple-700 text-sm font-medium mb-4">
+              <Heart className="w-4 h-4 mr-2" />
+              Contribute to Digital Soul
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+              Help Enrich {personaName}'s Story
+            </h1>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Share your memories, stories, and insights to help create a more complete and authentic digital persona.
+            </p>
+          </div>
+
+          {/* Progress Steps */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {steps.map((step, index) => (
+                <div key={step.id} className="flex items-center">
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+                    currentStep >= step.id 
+                      ? 'bg-purple-600 border-purple-600 text-white' 
+                      : 'bg-white border-gray-300 text-gray-500'
+                  }`}>
+                    {currentStep > step.id ? (
+                      <Check className="w-5 h-5" />
+                    ) : (
+                      <step.icon className="w-5 h-5" />
+                    )}
+                  </div>
+                  {index < steps.length - 1 && (
+                    <div className={`w-16 h-0.5 mx-2 ${
+                      currentStep > step.id ? 'bg-purple-600' : 'bg-gray-300'
+                    }`} />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between mt-2">
+              {steps.map(step => (
+                <span key={step.id} className={`text-xs ${
+                  currentStep >= step.id ? 'text-purple-600 font-medium' : 'text-gray-500'
+                }`}>
+                  {step.title}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Step Content */}
+          <div className="bg-white rounded-2xl shadow-lg p-8">
+            {currentStep === 1 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Personal Information</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Your Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={contributionData.personalInfo.name}
+                      onChange={(e) => handleInputChange('personalInfo', 'name', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      placeholder="Enter your full name"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Your Email *
+                    </label>
+                    <input
+                      type="email"
+                      value={contributionData.personalInfo.email}
+                      onChange={(e) => handleInputChange('personalInfo', 'email', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      placeholder="Enter your email address"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Your Relationship to {personaName} *
+                  </label>
+                  <select
+                    value={contributionData.personalInfo.relationship}
+                    onChange={(e) => handleInputChange('personalInfo', 'relationship', e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    <option value="">Select relationship</option>
+                    <option value="spouse">Spouse/Partner</option>
+                    <option value="child">Child</option>
+                    <option value="parent">Parent</option>
+                    <option value="sibling">Sibling</option>
+                    <option value="friend">Friend</option>
+                    <option value="colleague">Colleague</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {currentStep === 2 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Memories & Stories</h2>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Share a Story or Memory
+                  </label>
+                  <textarea
+                    rows={4}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Tell us about a special moment, memory, or story involving this person..."
+                  />
+                  <button className="mt-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors">
+                    Add Story
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Photos
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600">Drag and drop photos here, or click to browse</p>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={(e) => handleFileUpload('memories', 'photos', e.target.files)}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Voice Recordings
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <Mic className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600">Record or upload voice messages</p>
+                    <button className="mt-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors">
+                      Record Message
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentStep === 3 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Personality & Traits</h2>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Personality Traits
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {contributionData.personality.traits.map((trait, index) => (
+                      <span key={index} className="flex items-center bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm">
+                        {trait}
+                        <button
+                          onClick={() => removeArrayItem('personality', 'traits', index)}
+                          className="ml-2 text-purple-500 hover:text-purple-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add a trait (e.g., kind, funny, wise)"
+                      className="flex-1 p-2 border border-gray-300 rounded-lg"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          addArrayItem('personality', 'traits', e.currentTarget.value);
+                          e.currentTarget.value = '';
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={(e) => {
+                        const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        addArrayItem('personality', 'traits', input.value);
+                        input.value = '';
+                      }}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Interests & Hobbies
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {contributionData.personality.interests.map((interest, index) => (
+                      <span key={index} className="flex items-center bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
+                        {interest}
+                        <button
+                          onClick={() => removeArrayItem('personality', 'interests', index)}
+                          className="ml-2 text-blue-500 hover:text-blue-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Add an interest (e.g., cooking, gardening)"
+                      className="flex-1 p-2 border border-gray-300 rounded-lg"
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          addArrayItem('personality', 'interests', e.currentTarget.value);
+                          e.currentTarget.value = '';
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={(e) => {
+                        const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                        addArrayItem('personality', 'interests', input.value);
+                        input.value = '';
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentStep === 4 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Relationships & Connections</h2>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Family Members
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Describe family relationships, important family members, family traditions..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Significant Life Events
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Share important life events, milestones, challenges overcome..."
+                  />
+                </div>
+              </div>
+            )}
+
+            {currentStep === 5 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Review & Submit</h2>
+                
+                <div className="bg-gray-50 rounded-lg p-6">
+                  <h3 className="font-semibold text-gray-900 mb-4">Summary of Your Contribution</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <span className="font-medium text-gray-700">Name:</span>
+                      <span className="ml-2 text-gray-900">{contributionData.personalInfo.name || 'Not provided'}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Relationship:</span>
+                      <span className="ml-2 text-gray-900">{contributionData.personalInfo.relationship || 'Not provided'}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Personality Traits:</span>
+                      <span className="ml-2 text-gray-900">
+                        {contributionData.personality.traits.length > 0 
+                          ? contributionData.personality.traits.join(', ') 
+                          : 'None added'
+                        }
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-700">Interests:</span>
+                      <span className="ml-2 text-gray-900">
+                        {contributionData.personality.interests.length > 0 
+                          ? contributionData.personality.interests.join(', ') 
+                          : 'None added'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-3">
+                    <Star className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium text-blue-900">Your contribution matters</h4>
+                      <p className="text-sm text-blue-800 mt-1">
+                        Every story, memory, and detail you share helps create a more authentic and complete digital persona.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Navigation Buttons */}
+            <div className="flex justify-between mt-8">
+              <button
+                onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
+                disabled={currentStep === 1}
+                className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                  currentStep === 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Previous
+              </button>
+
+              {currentStep < 5 ? (
+                <button
+                  onClick={() => setCurrentStep(currentStep + 1)}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={isSubmitting}
+                  className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                    isSubmitting
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Contribution'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ContributorPage;
