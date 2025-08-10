@@ -52,6 +52,7 @@ const DashboardPage = () => {
   const [liveActivities, setLiveActivities] = useState<any[]>([]);
   const [liveContributions, setLiveContributions] = useState<any[]>([]);
   const [isApproving, setIsApproving] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!isSupabaseAuth) return;
@@ -274,60 +275,151 @@ const DashboardPage = () => {
                     const videosCount = (memories.videos?.length) || 0;
                     const voicesCount = (memories.voiceRecordings?.length) || 0;
                     return (
-                      <li key={c.id} className="py-4 flex items-start justify-between">
-                        <div>
-                          <div className="text-gray-900 font-medium">{c.submitted_email || info.email || 'Contributor'}</div>
-                          <div className="text-gray-600 text-sm">{new Date(c.created_at).toLocaleString()}</div>
-                          <div className="text-gray-600 text-sm mt-1">
-                            {info.name ? `Name: ${info.name} • ` : ''}
-                            {info.relationship ? `Relationship: ${info.relationship}` : ''}
+                      <li key={c.id} className="py-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="text-gray-900 font-medium">{c.submitted_email || info.email || 'Contributor'}</div>
+                            <div className="text-gray-600 text-sm">{new Date(c.created_at).toLocaleString()}</div>
+                            <div className="text-gray-600 text-sm mt-1">
+                              {info.name ? `Name: ${info.name} • ` : ''}
+                              {info.relationship ? `Relationship: ${info.relationship}` : ''}
+                            </div>
+                            <div className="text-gray-500 text-xs mt-1">
+                              {`Stories: ${storiesCount} • Photos: ${photosCount} • Videos: ${videosCount} • Voice: ${voicesCount}`}
+                            </div>
                           </div>
-                          <div className="text-gray-500 text-xs mt-1">
-                            {`Stories: ${storiesCount} • Photos: ${photosCount} • Videos: ${videosCount} • Voice: ${voicesCount}`}
+                          <div className="flex items-center gap-2 ml-4">
+                            <button
+                              onClick={() => setExpanded(prev => ({ ...prev, [c.id]: !prev[c.id] }))}
+                              className="px-3 py-1 rounded-lg bg-blue-100 text-blue-700 text-sm hover:bg-blue-200"
+                            >{expanded[c.id] ? 'Hide details' : 'Review details'}</button>
+                            <button
+                              onClick={async () => {
+                                setIsApproving(c.id);
+                                try {
+                                  await approveOrRejectContribution({ id: c.id, status: 'APPROVED' });
+                                  setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                                } finally {
+                                  setIsApproving(null);
+                                }
+                              }}
+                              disabled={isApproving === c.id}
+                              className="px-3 py-1 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
+                            >Approve</button>
+                            <button
+                              onClick={async () => {
+                                setIsApproving(c.id);
+                                try {
+                                  await approveOrRejectContribution({ id: c.id, status: 'REJECTED' });
+                                  setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                                } finally {
+                                  setIsApproving(null);
+                                }
+                              }}
+                              disabled={isApproving === c.id}
+                              className="px-3 py-1 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
+                            >Reject</button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Delete this submission permanently?')) return;
+                                setIsApproving(c.id);
+                                try {
+                                  await deleteContribution({ id: c.id });
+                                  setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                                } finally {
+                                  setIsApproving(null);
+                                }
+                              }}
+                              disabled={isApproving === c.id}
+                              className="px-3 py-1 rounded-lg bg-gray-200 text-gray-800 text-sm hover:bg-gray-300 disabled:opacity-50"
+                            >Delete</button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 ml-4">
-                          <button
-                            onClick={async () => {
-                              setIsApproving(c.id);
-                              try {
-                                await approveOrRejectContribution({ id: c.id, status: 'APPROVED' });
-                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
-                              } finally {
-                                setIsApproving(null);
-                              }
-                            }}
-                            disabled={isApproving === c.id}
-                            className="px-3 py-1 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
-                          >Approve</button>
-                          <button
-                            onClick={async () => {
-                              setIsApproving(c.id);
-                              try {
-                                await approveOrRejectContribution({ id: c.id, status: 'REJECTED' });
-                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
-                              } finally {
-                                setIsApproving(null);
-                              }
-                            }}
-                            disabled={isApproving === c.id}
-                            className="px-3 py-1 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
-                          >Reject</button>
-                          <button
-                            onClick={async () => {
-                              if (!confirm('Delete this submission permanently?')) return;
-                              setIsApproving(c.id);
-                              try {
-                                await deleteContribution({ id: c.id });
-                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
-                              } finally {
-                                setIsApproving(null);
-                              }
-                            }}
-                            disabled={isApproving === c.id}
-                            className="px-3 py-1 rounded-lg bg-gray-200 text-gray-800 text-sm hover:bg-gray-300 disabled:opacity-50"
-                          >Delete</button>
-                        </div>
+
+                        {expanded[c.id] && (
+                          <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+                            {/* Personal Info */}
+                            <div className="mb-4">
+                              <div className="text-sm font-semibold text-gray-900 mb-1">Personal Info</div>
+                              <div className="text-sm text-gray-700">
+                                {info.name && <div>Name: {info.name}</div>}
+                                {info.relationship && <div>Relationship: {info.relationship}</div>}
+                                {(c.submitted_email || info.email) && <div>Email: {c.submitted_email || info.email}</div>}
+                              </div>
+                            </div>
+                            {/* Stories */}
+                            {Array.isArray(memories.stories) && memories.stories.length > 0 && (
+                              <div className="mb-4">
+                                <div className="text-sm font-semibold text-gray-900 mb-2">Stories</div>
+                                <div className="space-y-2">
+                                  {memories.stories.map((s: any, i: number) => (
+                                    <div key={i} className="p-3 bg-white rounded border border-gray-200">
+                                      <div className="font-medium text-gray-900">{s.title || 'Untitled'}</div>
+                                      {s.text && <div className="text-sm text-gray-700 whitespace-pre-line mt-1">{s.text}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Photos */}
+                            {Array.isArray(memories.photos) && memories.photos.length > 0 && (
+                              <div className="mb-4">
+                                <div className="text-sm font-semibold text-gray-900 mb-2">Photos</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {memories.photos.map((p: any, i: number) => (
+                                    <div key={i} className="p-3 bg-white rounded border border-gray-200">
+                                      {p.signedUrl || p.url ? (
+                                        <img src={p.signedUrl || p.url} alt={p.title || 'Photo'} className="w-full h-40 object-cover rounded mb-2" />
+                                      ) : (
+                                        <div className="text-xs text-gray-500 mb-1">{p.file?.name || p.title || 'Photo'}</div>
+                                      )}
+                                      <div className="text-sm text-gray-700">{p.title || 'Untitled'}</div>
+                                      {p.description && <div className="text-xs text-gray-600">{p.description}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Videos */}
+                            {Array.isArray(memories.videos) && memories.videos.length > 0 && (
+                              <div className="mb-4">
+                                <div className="text-sm font-semibold text-gray-900 mb-2">Videos</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {memories.videos.map((v: any, i: number) => (
+                                    <div key={i} className="p-3 bg-white rounded border border-gray-200">
+                                      {v.signedUrl || v.url ? (
+                                        <video src={v.signedUrl || v.url} controls className="w-full h-40 rounded mb-2" />
+                                      ) : (
+                                        <div className="text-xs text-gray-500 mb-1">{v.file?.name || v.title || 'Video'}</div>
+                                      )}
+                                      <div className="text-sm text-gray-700">{v.title || 'Untitled'}</div>
+                                      {v.description && <div className="text-xs text-gray-600">{v.description}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Voice Recordings */}
+                            {Array.isArray(memories.voiceRecordings) && memories.voiceRecordings.length > 0 && (
+                              <div className="mb-2">
+                                <div className="text-sm font-semibold text-gray-900 mb-2">Voice Clips</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  {memories.voiceRecordings.map((a: any, i: number) => (
+                                    <div key={i} className="p-3 bg-white rounded border border-gray-200">
+                                      {a.signedUrl || a.url ? (
+                                        <audio src={a.signedUrl || a.url} controls className="w-full mb-2" />
+                                      ) : (
+                                        <div className="text-xs text-gray-500 mb-1">{a.file?.name || a.title || 'Audio clip'}</div>
+                                      )}
+                                      <div className="text-sm text-gray-700">{a.title || 'Untitled'}</div>
+                                      {a.description && <div className="text-xs text-gray-600">{a.description}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </li>
                     );
                   })}
