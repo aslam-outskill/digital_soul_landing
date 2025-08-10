@@ -205,13 +205,7 @@ const ContributorPage = () => {
     }
   }, [isViewerInvite, invitationToken, currentUserEmail, personaIdParam]);
 
-  // Immediate redirect for VIEWER to Chat (lets Chat handle auth), avoid showing contributor UI at all
-  useEffect(() => {
-    if (!isViewerInvite) return;
-    if (personaIdParam) {
-      navigate(`/chat?personaId=${encodeURIComponent(personaIdParam)}&name=${encodeURIComponent(personaName)}`);
-    }
-  }, [isViewerInvite, personaIdParam, personaName, navigate]);
+  // Removed unconditional redirect so we can accept the invite and register viewer as participant first
 
   const handleInputChange = (section: keyof ContributionData, field: string, value: any) => {
     setContributionData(prev => ({

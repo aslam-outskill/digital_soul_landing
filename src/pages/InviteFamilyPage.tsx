@@ -50,6 +50,7 @@ const InviteFamilyPage = () => {
   const [showInvites, setShowInvites] = useState(true);
   const [liveInvites, setLiveInvites] = useState<any[]>([]);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
+  const [displayParticipants, setDisplayParticipants] = useState<any[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [canManageMembers, setCanManageMembers] = useState<boolean>(false);
 
@@ -83,6 +84,22 @@ const InviteFamilyPage = () => {
           setLiveInvites(res as any[]);
           const parts = await listParticipantsForPersonaIds([pid]);
           setLiveParticipants(parts as any[]);
+          // Merge accepted invites as fallback display participants if participant upsert hasn't happened yet
+          const accepted = (res || []).filter((i: any) => i.status === 'ACCEPTED');
+          const byUserOrEmail = new Set(parts.map((p: any) => p.user_id || p.email));
+          const acceptedAsMembers = accepted
+            .filter((i: any) => !byUserOrEmail.has(i.accepted_user_id) && !byUserOrEmail.has(i.email))
+            .map((i: any) => ({
+              id: `inv_${i.id}`,
+              persona_id: i.persona_id,
+              user_id: i.accepted_user_id,
+              role: i.role,
+              name: null,
+              email: i.email,
+              relationship: null,
+              created_at: i.accepted_at || i.created_at
+            }));
+          setDisplayParticipants([ ...parts, ...acceptedAsMembers ]);
           // determine owner/custodian rights for selected persona
           const [uid, myMemberships] = await Promise.all([
             getCurrentUserId(),
@@ -97,6 +114,7 @@ const InviteFamilyPage = () => {
         } catch {
           setLiveInvites([]);
           setLiveParticipants([]);
+          setDisplayParticipants([]);
           setCanManageMembers(false);
         }
       } else {
@@ -129,6 +147,21 @@ const InviteFamilyPage = () => {
         setLiveInvites(res as any[]);
         const parts = await listParticipantsForPersonaIds([pid]);
         setLiveParticipants(parts as any[]);
+        const accepted = (res || []).filter((i: any) => i.status === 'ACCEPTED');
+        const byUserOrEmail = new Set(parts.map((p: any) => p.user_id || p.email));
+        const acceptedAsMembers = accepted
+          .filter((i: any) => !byUserOrEmail.has(i.accepted_user_id) && !byUserOrEmail.has(i.email))
+          .map((i: any) => ({
+            id: `inv_${i.id}`,
+            persona_id: i.persona_id,
+            user_id: i.accepted_user_id,
+            role: i.role,
+            name: null,
+            email: i.email,
+            relationship: null,
+            created_at: i.accepted_at || i.created_at
+          }));
+        setDisplayParticipants([ ...parts, ...acceptedAsMembers ]);
         const [uid, myMemberships] = await Promise.all([
           getCurrentUserId(),
           listMyMemberships()
@@ -505,7 +538,7 @@ const InviteFamilyPage = () => {
               </span>
             </div>
 
-            {(isSupabaseAuth ? liveParticipants.length === 0 : familyMembers.length === 0) ? (
+            {(isSupabaseAuth ? displayParticipants.length === 0 : familyMembers.length === 0) ? (
               <div className="text-center py-12">
                 <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No family members yet</h3>
@@ -519,7 +552,7 @@ const InviteFamilyPage = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {(isSupabaseAuth ? liveParticipants : familyMembers).map((member: any) => (
+                {(isSupabaseAuth ? displayParticipants : familyMembers).map((member: any) => (
                   <div key={member.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
                     <div className="flex items-center space-x-4">
                       <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
