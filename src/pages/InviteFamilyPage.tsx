@@ -85,9 +85,9 @@ const InviteFamilyPage = () => {
           const parts = await listParticipantsForPersonaIds([pid]);
           setLiveParticipants(parts as any[]);
           // Merge accepted invites as fallback display participants if participant upsert hasn't happened yet
-          const accepted = (res || []).filter((i: any) => i.status === 'ACCEPTED');
+          const viewerInvites = (res || []).filter((i: any) => String(i.role).toUpperCase() === 'VIEWER' && i.status !== 'REVOKED');
           const byUserOrEmail = new Set(parts.map((p: any) => p.user_id || p.email));
-          const acceptedAsMembers = accepted
+          const invitesAsMembers = viewerInvites
             .filter((i: any) => !byUserOrEmail.has(i.accepted_user_id) && !byUserOrEmail.has(i.email))
             .map((i: any) => ({
               id: `inv_${i.id}`,
@@ -99,7 +99,7 @@ const InviteFamilyPage = () => {
               relationship: null,
               created_at: i.accepted_at || i.created_at
             }));
-          setDisplayParticipants([ ...parts, ...acceptedAsMembers ]);
+          setDisplayParticipants([ ...parts, ...invitesAsMembers ]);
           // determine owner/custodian rights for selected persona
           const [uid, myMemberships] = await Promise.all([
             getCurrentUserId(),
@@ -147,9 +147,9 @@ const InviteFamilyPage = () => {
         setLiveInvites(res as any[]);
         const parts = await listParticipantsForPersonaIds([pid]);
         setLiveParticipants(parts as any[]);
-        const accepted = (res || []).filter((i: any) => i.status === 'ACCEPTED');
+        const viewerInvites = (res || []).filter((i: any) => String(i.role).toUpperCase() === 'VIEWER' && i.status !== 'REVOKED');
         const byUserOrEmail = new Set(parts.map((p: any) => p.user_id || p.email));
-        const acceptedAsMembers = accepted
+        const invitesAsMembers = viewerInvites
           .filter((i: any) => !byUserOrEmail.has(i.accepted_user_id) && !byUserOrEmail.has(i.email))
           .map((i: any) => ({
             id: `inv_${i.id}`,
@@ -161,7 +161,7 @@ const InviteFamilyPage = () => {
             relationship: null,
             created_at: i.accepted_at || i.created_at
           }));
-        setDisplayParticipants([ ...parts, ...acceptedAsMembers ]);
+        setDisplayParticipants([ ...parts, ...invitesAsMembers ]);
         const [uid, myMemberships] = await Promise.all([
           getCurrentUserId(),
           listMyMemberships()
