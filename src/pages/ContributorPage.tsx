@@ -49,6 +49,7 @@ const ContributorPage = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [inviteStatus, setInviteStatus] = useState<'PENDING' | 'INVALID' | 'ACCEPTED'>('PENDING');
   
   const [contributionData, setContributionData] = useState<ContributionData>({
@@ -282,6 +283,7 @@ const ContributorPage = () => {
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError(null);
     
     // Live: submit full contribution to Supabase when logged in
     const token = searchParams.get('invitation') || '';
@@ -318,14 +320,16 @@ const ContributorPage = () => {
         }));
         await submitPersonaContribution({ personaId: pid, content: sanitized });
         await logPersonaContribution({ personaId: pid, summary: 'New contribution submitted' });
-      } catch {}
+      } catch (e: any) {
+        setSubmitError(e?.message || 'Failed to submit contribution');
+      }
     } else {
       // Simulate API call for demo
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
     
     setIsSubmitting(false);
-    setSubmitted(true);
+    if (!submitError) setSubmitted(true);
 
     // Record a simple activity signal via invites store (demo mode only)
     try {
@@ -484,6 +488,11 @@ const ContributorPage = () => {
               Help Enrich {personaName}'s Story
             </h1>
             {acceptedBanner}
+            {submitError && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {submitError}
+              </div>
+            )}
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Share your memories, stories, and insights to help create a more complete and authentic digital persona.
             </p>
