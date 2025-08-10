@@ -35,6 +35,152 @@ export async function listMyPersonas() {
   return data as Tables<'personas'>[]
 }
 
+export async function getPersonaById(personaId: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await supabase
+    .from('personas')
+    .select('*')
+    .eq('id', personaId)
+    .single()
+  if (error) throw new Error(error.message)
+  return data as Tables<'personas'>
+}
+
+export async function listInvitesForPersonaIds(personaIds: string[]) {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!personaIds || personaIds.length === 0) return [] as Tables<'persona_invites'>[]
+  const { data, error } = await supabase
+    .from('persona_invites')
+    .select('*')
+    .in('persona_id', personaIds)
+  if (error) throw new Error(error.message)
+  return data as Tables<'persona_invites'>[]
+}
+
+export async function listParticipantsForPersonaIds(personaIds: string[]) {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!personaIds || personaIds.length === 0) return [] as any[]
+  const { data, error } = await supabase
+    .from('persona_participants')
+    .select('*')
+    .in('persona_id', personaIds)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data as any[]
+}
+
+export async function acceptInviteAndCreateMembership(params: { token: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  // Lookup invite by token
+  const { data: invites, error: findErr } = await supabase
+    .from('persona_invites')
+    .select('*')
+    .eq('token', params.token)
+    .limit(1)
+  if (findErr) throw new Error(findErr.message)
+  const inv = invites?.[0]
+  if (!inv) throw new Error('Invalid invite token')
+  if (inv.status !== 'PENDING') throw new Error('Invite already used or invalid')
+  // Mark invite accepted
+  await supabase
+    .from('persona_invites')
+    .update({ status: 'ACCEPTED', accepted_user_id: user.id, accepted_at: new Date().toISOString() as any })
+    .eq('token', params.token)
+  // Create membership
+  const { error: memErr } = await supabase
+    .from('persona_memberships')
+    .insert({ persona_id: inv.persona_id, user_id: user.id, role: inv.role })
+  if (memErr) throw new Error(memErr.message)
+  // Upsert participant profile
+  await supabase
+    .from('persona_participants')
+    .upsert({
+      persona_id: inv.persona_id,
+      user_id: user.id,
+      email: user.email as any,
+      name: (inv as any).name || null,
+      relationship: (inv as any).relationship || null,
+      role: inv.role
+    } as any)
+}
+
+export async function logPersonaContribution(params: { personaId: string; summary?: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const { error } = await supabase
+    .from('persona_activities')
+    .insert({
+      persona_id: params.personaId,
+      actor_user_id: user.id,
+      actor_email: user.email,
+      activity_type: 'CONTRIBUTION',
+      summary: params.summary || 'New contribution submitted'
+    })
+  if (error) throw new Error(error.message)
+}
+
+export async function listActivitiesForOwnerPersonaIds(personaIds: string[]) {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!personaIds || personaIds.length === 0) return [] as any[]
+  const { data, error } = await supabase
+    .from('persona_activities')
+    .select('*')
+    .in('persona_id', personaIds)
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data as any[]
+}
+
+export async function submitPersonaContribution(params: { personaId: string; content: any }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+  const payload = {
+    persona_id: params.personaId,
+    submitted_by: user.id,
+    submitted_email: user.email,
+    content: params.content
+  } as TablesInsert<'persona_contributions'>
+  const { error } = await supabase
+    .from('persona_contributions')
+    .insert(payload)
+  if (error) throw new Error(error.message)
+}
+
+export async function listPendingContributionsForOwner(personaIds: string[]) {
+  if (!supabase) throw new Error('Supabase not configured')
+  if (!personaIds || personaIds.length === 0) return [] as any[]
+  const { data, error } = await supabase
+    .from('persona_contributions')
+    .select('*')
+    .in('persona_id', personaIds)
+    .eq('status', 'PENDING')
+    .order('created_at', { ascending: false })
+  if (error) throw new Error(error.message)
+  return data as any[]
+}
+
+export async function approveOrRejectContribution(params: { id: string; status: 'APPROVED'|'REJECTED' }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase
+    .from('persona_contributions')
+    .update({ status: params.status })
+    .eq('id', params.id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deleteContribution(params: { id: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase
+    .from('persona_contributions')
+    .delete()
+    .eq('id', params.id)
+  if (error) throw new Error(error.message)
+}
+
 export async function getCurrentUserId() {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.auth.getUser()

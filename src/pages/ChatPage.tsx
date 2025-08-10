@@ -87,15 +87,15 @@ const ChatPage = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Scroll to top and auth gate
+  // Scroll to top and auth gate (allow viewer links without login)
   useEffect(() => {
     window.scrollTo(0, 0);
     if (currentUserEmail) {
       const isDemo = !isSupabaseAuth && !!JSON.parse(localStorage.getItem('userInfo') || 'null')?.isDemo;
       setUserInfo({ email: currentUserEmail, isDemo });
     } else {
-      const raw = localStorage.getItem('userInfo');
-      if (raw) setUserInfo(JSON.parse(raw)); else navigate('/');
+      // Allow guest chat via direct link (viewer access)
+      setUserInfo({ email: null, isDemo: false });
     }
     if (!hasWelcomedRef.current) {
       hasWelcomedRef.current = true;

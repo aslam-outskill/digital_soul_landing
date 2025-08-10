@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -15,7 +15,9 @@ import {
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
-import { readInvites } from '../utils/localStore';
+import { supabase } from '../utils/supabaseClient';
+import { getPersonaById, logPersonaContribution, submitPersonaContribution, acceptInviteAndCreateMembership } from '../services/supabaseHelpers';
+import { readInvites, writeInvites } from '../utils/localStore';
 
 interface ContributionData {
   personalInfo: {
@@ -72,14 +74,80 @@ const ContributorPage = () => {
       significantEvents: []
     }
   });
+  const [storyTitle, setStoryTitle] = useState<string>('');
+  const [storyText, setStoryText] = useState<string>('');
+  const photoInputId = useMemo(() => `photo-input-${Math.random().toString(36).slice(2, 8)}`, []);
+  const videoInputId = useMemo(() => `video-input-${Math.random().toString(36).slice(2, 8)}`, []);
+  const audioInputId = useMemo(() => `audio-input-${Math.random().toString(36).slice(2, 8)}`, []);
 
   // Get invitation data from URL params
   const invitationToken = searchParams.get('invitation');
-  const personaName = searchParams.get('name') || 'Digital Soul';
-  const { setMembership, currentUserEmail } = useAuthRole();
+  const { setMembership, currentUserEmail, personas } = useAuthRole();
+  const [personaName, setPersonaName] = useState<string>(searchParams.get('name') || 'Digital Soul');
+  const personaIdParam = searchParams.get('personaId') || '';
+  const roleUpper = (searchParams.get('role') || '').toUpperCase();
+  const isViewerInvite = roleUpper === 'VIEWER';
 
   useEffect(() => {
+    // Derive persona name if not provided in URL
+    const urlName = searchParams.get('name');
+    if (urlName) {
+      setPersonaName(urlName);
+      return;
+    }
+    const token = searchParams.get('invitation') || '';
+    let resolvedName: string | null = null;
+    if (token) {
+      const invList = readInvites();
+      const inv = invList.find(i => i.token === token);
+      const pid = inv?.personaId || personaIdParam;
+      if (pid) {
+        const p = personas.find(pp => (pp as any).id === pid);
+        if (p) {
+          resolvedName = (p as any).subjectFullName || (p as any).name || null;
+        }
+        // If not found in local context and supabase is configured, fetch live persona
+        if (!resolvedName && supabase) {
+          getPersonaById(pid).then(lp => {
+            const liveName = (lp as any).name || null;
+            if (liveName) setPersonaName(liveName);
+          }).catch(() => {});
+        }
+      }
+    }
+    if (!resolvedName && personaIdParam) {
+      const p = personas.find(pp => (pp as any).id === personaIdParam);
+      if (p) {
+        resolvedName = (p as any).subjectFullName || (p as any).name || null;
+      }
+      if (!resolvedName && supabase) {
+        getPersonaById(personaIdParam).then(lp => {
+          const liveName = (lp as any).name || null;
+          if (liveName) setPersonaName(liveName);
+        }).catch(() => {});
+      }
+    }
+    if (resolvedName) setPersonaName(resolvedName);
+  }, [searchParams, personas]);
+
+  // Always try to refine the name from DB when personaId is provided
+  useEffect(() => {
+    if (!personaIdParam || !supabase) return;
+    getPersonaById(personaIdParam)
+      .then(lp => {
+        const liveName = (lp as any).name || null;
+        if (liveName) setPersonaName(liveName);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personaIdParam]);
+
+  // Run once on mount to position under fixed navbar
+  useEffect(() => {
     window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     const roleParam = (searchParams.get('role') || '').toUpperCase();
     const personaIdParam = searchParams.get('personaId') || '';
     if (!invitationToken) {
@@ -100,9 +168,10 @@ const ContributorPage = () => {
       setInviteStatus('INVALID');
       return;
     }
-    // Simulate acceptance
+    // Accept membership
     setTimeout(() => {
       if (!currentUserEmail || !targetPersonaId) return;
+      acceptInviteAndCreateMembership({ token: invitationToken }).catch(() => {});
       setMembership(targetPersonaId, currentUserEmail, targetRole);
       if (inv) {
         const updated = list.map(x => x.id === inv.id ? { ...x, status: 'ACCEPTED', acceptedUserEmail: currentUserEmail } : x);
@@ -111,6 +180,38 @@ const ContributorPage = () => {
       setInviteStatus('ACCEPTED');
     }, 400);
   }, [invitationToken, currentUserEmail, setMembership, searchParams]);
+
+  // For VIEWER invites, redirect to chat after acceptance (or if already invalid/used)
+  useEffect(() => {
+    if (isViewerInvite && (inviteStatus === 'ACCEPTED' || inviteStatus === 'INVALID')) {
+      const pid = personaIdParam;
+      if (pid) {
+        navigate(`/chat?personaId=${encodeURIComponent(pid)}&name=${encodeURIComponent(personaName)}`);
+      }
+    }
+  }, [isViewerInvite, inviteStatus, personaIdParam, personaName, navigate]);
+
+  // If VIEWER invite and user is authenticated, accept immediately then route to chat
+  useEffect(() => {
+    if (!isViewerInvite) return;
+    if (!invitationToken) {
+      setInviteStatus('INVALID');
+      return;
+    }
+    if (currentUserEmail && personaIdParam) {
+      acceptInviteAndCreateMembership({ token: invitationToken })
+        .then(() => setInviteStatus('ACCEPTED'))
+        .catch(() => setInviteStatus('INVALID'));
+    }
+  }, [isViewerInvite, invitationToken, currentUserEmail, personaIdParam]);
+
+  // Immediate redirect for VIEWER to Chat (lets Chat handle auth), avoid showing contributor UI at all
+  useEffect(() => {
+    if (!isViewerInvite) return;
+    if (personaIdParam) {
+      navigate(`/chat?personaId=${encodeURIComponent(personaIdParam)}&name=${encodeURIComponent(personaName)}`);
+    }
+  }, [isViewerInvite, personaIdParam, personaName, navigate]);
 
   const handleInputChange = (section: keyof ContributionData, field: string, value: any) => {
     setContributionData(prev => ({
@@ -188,11 +289,41 @@ const ContributorPage = () => {
   const handleSubmit = async () => {
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Live: submit full contribution to Supabase when logged in
+    const token = searchParams.get('invitation') || '';
+    const list = readInvites();
+    const inv = list.find(i => i.token === token);
+    const pid = inv?.personaId || personaIdParam;
+    if (pid && supabase && currentUserEmail) {
+      try {
+        await submitPersonaContribution({ personaId: pid, content: contributionData });
+      } catch {}
+    } else {
+      // Simulate API call for demo
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
     
     setIsSubmitting(false);
     setSubmitted(true);
+
+    // Record a simple activity signal via invites store (demo mode only)
+    try {
+      const token2 = searchParams.get('invitation') || '';
+      if (token2) {
+        const list2 = readInvites();
+        const idx = list2.findIndex(i => i.token === token2);
+        if (idx >= 0) {
+          const current = list2[idx].contributionCount || 0;
+          list2[idx].contributionCount = current + 1;
+          writeInvites(list2);
+          // Live: also log to Supabase activities table, if personaId is known and user is authenticated
+          const pid2 = list2[idx].personaId || personaIdParam;
+          if (pid2 && supabase) {
+            logPersonaContribution({ personaId: pid2, summary: `Contribution from ${currentUserEmail || 'guest'}` }).catch(() => {});
+          }
+        }
+      }
+    } catch {}
   };
 
   const steps = [
@@ -300,7 +431,10 @@ const ContributorPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+    <div
+      className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 overflow-y-auto"
+      style={{ WebkitOverflowScrolling: 'touch' }}
+    >
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -432,24 +566,34 @@ const ContributorPage = () => {
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-gray-700">Share Stories</label>
                   <div className="grid md:grid-cols-2 gap-3">
-                    <input type="text" placeholder="Story title" className="p-3 border border-gray-300 rounded-lg" id="storyTitleInput" />
-                    <textarea id="storyTextInput" rows={2} placeholder="Write a short story or memory..." className="p-3 border border-gray-300 rounded-lg" />
+                    <input
+                      type="text"
+                      placeholder="Story title"
+                      className="p-3 border border-gray-300 rounded-lg"
+                      value={storyTitle}
+                      onChange={(e) => setStoryTitle(e.target.value)}
+                    />
+                    <textarea
+                      rows={2}
+                      placeholder="Write a short story or memory..."
+                      className="p-3 border border-gray-300 rounded-lg"
+                      value={storyText}
+                      onChange={(e) => setStoryText(e.target.value)}
+                    />
                   </div>
                   <button
                     className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
                     onClick={() => {
-                      const titleEl = document.getElementById('storyTitleInput') as HTMLInputElement;
-                      const textEl = document.getElementById('storyTextInput') as HTMLTextAreaElement;
-                      if (!titleEl?.value && !textEl?.value) return;
+                      if (!storyTitle.trim() && !storyText.trim()) return;
                       setContributionData(prev => ({
                         ...prev,
                         memories: {
                           ...prev.memories,
-                          stories: [...prev.memories.stories, { title: titleEl.value || 'Untitled', text: textEl.value || '' }]
+                          stories: [...prev.memories.stories, { title: storyTitle.trim() || 'Untitled', text: storyText.trim() || '' }]
                         }
                       }));
-                      if (titleEl) titleEl.value = '';
-                      if (textEl) textEl.value = '';
+                      setStoryTitle('');
+                      setStoryText('');
                     }}
                   >
                     Add Story
@@ -478,17 +622,23 @@ const ContributorPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Upload Photos
                   </label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <label
+                    htmlFor={photoInputId}
+                    className="block border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer"
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => { e.preventDefault(); handleFileUpload('memories', 'photos', e.dataTransfer.files); }}
+                  >
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-600">Drag and drop photos here, or click to browse</p>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload('memories', 'photos', e.target.files)}
-                      className="hidden"
-                    />
-                  </div>
+                  </label>
+                  <input
+                    id={photoInputId}
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => handleFileUpload('memories', 'photos', e.target.files)}
+                    className="hidden"
+                  />
                   {contributionData.memories.photos.length > 0 && (
                     <div className="mt-3 space-y-3">
                       {contributionData.memories.photos.map((p, idx) => (
@@ -511,17 +661,23 @@ const ContributorPage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Upload Videos</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <label
+                    htmlFor={videoInputId}
+                    className="block border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer"
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => { e.preventDefault(); handleFileUpload('memories', 'videos', e.dataTransfer.files); }}
+                  >
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-600">Drag and drop videos here, or click to browse</p>
-                    <input
-                      type="file"
-                      multiple
-                      accept="video/*"
-                      onChange={(e) => handleFileUpload('memories', 'videos', e.target.files)}
-                      className="hidden"
-                    />
-                  </div>
+                  </label>
+                  <input
+                    id={videoInputId}
+                    type="file"
+                    multiple
+                    accept="video/*"
+                    onChange={(e) => handleFileUpload('memories', 'videos', e.target.files)}
+                    className="hidden"
+                  />
                   {contributionData.memories.videos.length > 0 && (
                     <div className="mt-3 space-y-3">
                       {contributionData.memories.videos.map((v, idx) => (
@@ -544,17 +700,23 @@ const ContributorPage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Voice Recordings</label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <label
+                    htmlFor={audioInputId}
+                    className="block border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer"
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={(e) => { e.preventDefault(); handleFileUpload('memories', 'voiceRecordings', e.dataTransfer.files); }}
+                  >
                     <Mic className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-gray-600">Upload voice messages (optional)</p>
-                    <input
-                      type="file"
-                      multiple
-                      accept="audio/*"
-                      onChange={(e) => handleFileUpload('memories', 'voiceRecordings', e.target.files)}
-                      className="hidden"
-                    />
-                  </div>
+                  </label>
+                  <input
+                    id={audioInputId}
+                    type="file"
+                    multiple
+                    accept="audio/*"
+                    onChange={(e) => handleFileUpload('memories', 'voiceRecordings', e.target.files)}
+                    className="hidden"
+                  />
                   {contributionData.memories.voiceRecordings.length > 0 && (
                     <div className="mt-3 space-y-3">
                       {contributionData.memories.voiceRecordings.map((a, idx) => (

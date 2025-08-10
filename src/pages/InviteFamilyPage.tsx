@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ArrowLeft, 
   Mail, 
@@ -16,6 +16,8 @@ import {
 import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { PersonaInvite, PersonaRole } from '../types/persona';
+import { createInvite as createInviteLive } from '../services/supabaseHelpers';
+import { listInvitesForPersonaIds, listParticipantsForPersonaIds } from '../services/supabaseHelpers';
 
 interface FamilyMember {
   id: string;
@@ -30,6 +32,8 @@ interface FamilyMember {
 const InviteFamilyPage = () => {
   const navigate = useNavigate();
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [searchParams] = useSearchParams();
+  const defaultPersonaNameFromUrl = searchParams.get('name') || '';
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [inviteForm, setInviteForm] = useState({
@@ -44,6 +48,9 @@ const InviteFamilyPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   const [showInvites, setShowInvites] = useState(true);
+  const [liveInvites, setLiveInvites] = useState<any[]>([]);
+  const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -63,6 +70,68 @@ const InviteFamilyPage = () => {
       }
     }
   }, [navigate, currentUserEmail, isSupabaseAuth]);
+
+  // Load invites as the source of truth for family members
+  useEffect(() => {
+    const load = async () => {
+      if (isSupabaseAuth) {
+        const pid = selectedPersonaId || personas[0]?.id || '';
+        if (!pid) { setLiveInvites([]); return; }
+        try {
+          const res = await listInvitesForPersonaIds([pid]);
+          setLiveInvites(res as any[]);
+          const parts = await listParticipantsForPersonaIds([pid]);
+          setLiveParticipants(parts as any[]);
+        } catch {
+          setLiveInvites([]);
+          setLiveParticipants([]);
+        }
+      } else {
+        // In demo, derive familyMembers from local invites
+        const derived: FamilyMember[] = invites
+          .filter(i => i.personaId === (selectedPersonaId || personas[0]?.id))
+          .map(i => ({
+            id: i.id,
+            name: i.name,
+            email: i.email,
+            relationship: i.relationship,
+            status: i.status === 'ACCEPTED' ? 'accepted' : 'pending',
+            invitedAt: new Date(i.invitedAt)
+          }));
+        setFamilyMembers(derived);
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupabaseAuth, selectedPersonaId, personas, invites]);
+
+  // Auto-refresh live invites periodically for quick UI updates after acceptance
+  useEffect(() => {
+    if (!isSupabaseAuth) return;
+    const id = setInterval(async () => {
+      const pid = selectedPersonaId || personas[0]?.id || '';
+      if (!pid) return;
+      try {
+        const res = await listInvitesForPersonaIds([pid]);
+        setLiveInvites(res as any[]);
+        const parts = await listParticipantsForPersonaIds([pid]);
+        setLiveParticipants(parts as any[]);
+      } catch {}
+    }, 5000);
+    return () => clearInterval(id);
+  }, [isSupabaseAuth, selectedPersonaId, personas]);
+
+  // Initialize selection from URL if provided, then auto-select when personas load
+  useEffect(() => {
+    const fromUrl = searchParams.get('personaId');
+    if (fromUrl && fromUrl !== selectedPersonaId) {
+      setSelectedPersonaId(fromUrl);
+      return;
+    }
+    if (!selectedPersonaId && personas && personas.length > 0) {
+      setSelectedPersonaId(personas[0].id);
+    }
+  }, [personas, selectedPersonaId, searchParams]);
 
   // Load demo family members only in demo mode
   useEffect(() => {
@@ -108,39 +177,61 @@ const InviteFamilyPage = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API call
-    setTimeout(() => {
-      const token = Math.random().toString(36).slice(2, 10);
-      const personaId = selectedPersonaId || personas[0]?.id || 'unknown';
-      const newInvite: PersonaInvite = {
-        id: `inv_${Date.now()}`,
-        personaId,
-        email: inviteForm.email,
-        name: inviteForm.name,
-        relationship: inviteForm.relationship,
-        role: inviteForm.role,
-        token,
-        status: 'PENDING',
-        invitedAt: new Date().toISOString(),
-      };
-      addInvite(newInvite);
-
-      const newMember: FamilyMember = {
-        id: newInvite.id,
-        name: inviteForm.name,
-        email: inviteForm.email,
-        relationship: inviteForm.relationship,
-        status: 'pending',
-        invitedAt: new Date()
-      };
-
-      setFamilyMembers(prev => [...prev, newMember]);
+    const token = Math.random().toString(36).slice(2, 10);
+    const personaId = selectedPersonaId || personas[0]?.id || '';
+    if (!personaId) {
+      setIsLoading(false);
+      alert('Please create or select a persona first.');
+      navigate('/dashboard');
+      return;
+    }
+    try {
+      setSubmitError(null);
+      if (isSupabaseAuth) {
+        try {
+          await createInviteLive({
+            persona_id: personaId as any,
+            email: inviteForm.email as any,
+            role: inviteForm.role as any,
+            token: token as any,
+            status: 'PENDING' as any
+          } as any);
+        } catch (e: any) {
+          setSubmitError(e?.message || 'Failed to create invite');
+          return;
+        }
+        const res = await listInvitesForPersonaIds([personaId]);
+        setLiveInvites(res as any[]);
+      } else {
+        const newInvite: PersonaInvite = {
+          id: `inv_${Date.now()}`,
+          personaId,
+          email: inviteForm.email,
+          name: inviteForm.name,
+          relationship: inviteForm.relationship,
+          role: inviteForm.role,
+          token,
+          status: 'PENDING',
+          invitedAt: new Date().toISOString(),
+        };
+        addInvite(newInvite);
+        const newMember: FamilyMember = {
+          id: newInvite.id,
+          name: inviteForm.name,
+          email: inviteForm.email,
+          relationship: inviteForm.relationship,
+          status: 'pending',
+          invitedAt: new Date()
+        };
+        setFamilyMembers(prev => [...prev, newMember]);
+      }
       setCopiedEmail(inviteForm.email);
       setTimeout(() => setCopiedEmail(null), 1500);
       setInviteForm({ name: '', email: '', relationship: '', role: 'VIEWER', confirmOwnerAuthority: false });
       setShowInviteForm(false);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleRemoveMember = (id: string) => {
@@ -154,12 +245,25 @@ const InviteFamilyPage = () => {
   };
 
   const copyInviteLink = () => {
-    const latest = invites.slice(-1)[0];
-    const token = latest?.token || 'demo123';
-    const persona = personas.find(p => p.id === latest?.personaId);
-    const role = latest?.role || 'VIEWER';
-    const params = new URLSearchParams({ invitation: token, role: String(role), personaId: latest?.personaId || '' });
-    if (persona?.subjectFullName) params.set('name', persona.subjectFullName);
+    let chosenPersonaId = selectedPersonaId || personas[0]?.id || '';
+    if (!chosenPersonaId) {
+      alert('Please create a persona first. Redirecting to setup.');
+      navigate('/dashboard');
+      return;
+    }
+    // Find most recent pending invite for this persona
+    const latestForPersona = invites
+      .filter(i => i.personaId === chosenPersonaId && i.status === 'PENDING')
+      .sort((a, b) => new Date(a.invitedAt).getTime() - new Date(b.invitedAt).getTime())
+      .slice(-1)[0];
+    if (!latestForPersona) {
+      alert('Please create an invite for this persona first.');
+      return;
+    }
+    const persona = personas.find(p => p.id === chosenPersonaId);
+    const params = new URLSearchParams({ invitation: latestForPersona.token, role: String(latestForPersona.role), personaId: chosenPersonaId });
+    const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
+    if (resolvedName) params.set('name', resolvedName);
     const inviteLink = `${window.location.origin}/contributor?${params.toString()}`;
     navigator.clipboard.writeText(inviteLink);
     setCopiedEmail('link');
@@ -250,7 +354,7 @@ const InviteFamilyPage = () => {
                 onClick={() => setShowInvites(!showInvites)}
                 className="text-sm text-gray-600 hover:text-gray-800"
               >
-                {showInvites ? 'Hide' : 'Show'} Pending Invites
+              {showInvites ? 'Hide' : 'Show'} Pending Invites
               </button>
             </div>
             <div className="grid md:grid-cols-3 gap-4">
@@ -264,7 +368,7 @@ const InviteFamilyPage = () => {
                   >
                     <option value="">Auto-select latest</option>
                     {personas.map(p => (
-                      <option key={p.id} value={p.id}>{p.subjectFullName}</option>
+                      <option key={p.id} value={p.id}>{(p as any).subjectFullName || (p as any).name || 'Unnamed Persona'}</option>
                     ))}
                   </select>
                 </div>
@@ -293,14 +397,24 @@ const InviteFamilyPage = () => {
               
               <button
                 onClick={() => {
-                  const latest = invites.slice(-1)[0];
-                  if (!latest) {
-                    alert('No invites yet. Please create an invite first.');
+                  const chosenPersonaId = selectedPersonaId || personas[0]?.id || '';
+                  if (!chosenPersonaId) {
+                    alert('Please create a persona first. Redirecting to setup.');
+                    navigate('/dashboard');
                     return;
                   }
-                  const persona = personas.find(p => p.id === latest.personaId);
-                  const params = new URLSearchParams({ invitation: latest.token, role: String(latest.role), personaId: latest.personaId });
-                  if (persona?.subjectFullName) params.set('name', persona.subjectFullName);
+                  const latestForPersona = invites
+                    .filter(i => i.personaId === chosenPersonaId && i.status === 'PENDING')
+                    .sort((a, b) => new Date(a.invitedAt).getTime() - new Date(b.invitedAt).getTime())
+                    .slice(-1)[0];
+                  if (!latestForPersona) {
+                    alert('Please create an invite for this persona first.');
+                    return;
+                  }
+                  const persona = personas.find(p => p.id === chosenPersonaId);
+                  const params = new URLSearchParams({ invitation: latestForPersona.token, role: String(latestForPersona.role), personaId: chosenPersonaId });
+                  const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
+                  if (resolvedName) params.set('name', resolvedName);
                   navigate(`/contributor?${params.toString()}`);
                 }}
                 className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 flex items-center space-x-2"
@@ -320,31 +434,38 @@ const InviteFamilyPage = () => {
           </div>
 
           {/* Pending invites */}
-          {showInvites && invites.filter(i => i.status === 'PENDING').length > 0 && (
+          {showInvites && (
             <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Pending Invites</h2>
               <div className="space-y-3">
-                {invites.filter(i => i.status === 'PENDING').map(i => (
+                {(isSupabaseAuth ? liveInvites.filter((i:any) => i.status === 'PENDING') : invites.filter(i => i.status === 'PENDING')).map((i:any) => (
                   <div key={i.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                     <div>
-                      <div className="font-medium text-gray-900">{i.name} ({i.email})</div>
-                      <div className="text-xs text-gray-600">Role: {i.role.toLowerCase()} • Token: {i.token}</div>
+                      <div className="font-medium text-gray-900">{isSupabaseAuth ? i.email : `${i.name} (${i.email})`}</div>
+                      <div className="text-xs text-gray-600">Role: {String(i.role).toLowerCase()} • Token: {i.token}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         className="px-3 py-1 text-sm bg-gray-100 rounded-lg"
                         onClick={() => {
-                          const link = `${window.location.origin}/contributor?invitation=${i.token}`;
+                          const personaIdForLink = isSupabaseAuth ? i.persona_id : i.personaId;
+                          const persona = personas.find(p => p.id === personaIdForLink) || personas[0];
+                          const params = new URLSearchParams({ invitation: i.token, role: String(i.role), personaId: personaIdForLink });
+                          const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
+                          if (resolvedName) params.set('name', resolvedName);
+                          const link = `${window.location.origin}/contributor?${params.toString()}`;
                           navigator.clipboard.writeText(link);
                           setCopiedEmail('link');
                           setTimeout(() => setCopiedEmail(null), 1500);
                         }}
                       >Copy Link</button>
-                      <button className="px-3 py-1 text-sm text-red-700 bg-red-50 rounded-lg" onClick={() => {
-                        const updated = invites.map(x => x.id === i.id ? { ...x, status: 'REVOKED' } : x);
-                        localStorage.setItem('ds_persona_invites', JSON.stringify(updated));
-                        window.location.reload();
-                      }}>Revoke</button>
+                      {!isSupabaseAuth && (
+                        <button className="px-3 py-1 text-sm text-red-700 bg-red-50 rounded-lg" onClick={() => {
+                          const updated = invites.map(x => x.id === i.id ? { ...x, status: 'REVOKED' } : x);
+                          localStorage.setItem('ds_persona_invites', JSON.stringify(updated));
+                          window.location.reload();
+                        }}>Revoke</button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -357,11 +478,11 @@ const InviteFamilyPage = () => {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">Family Members</h2>
               <span className="text-sm text-gray-600">
-                {familyMembers.length} member{familyMembers.length !== 1 ? 's' : ''}
+                {(isSupabaseAuth ? liveParticipants.length : familyMembers.length)} member{(isSupabaseAuth ? liveParticipants.length : familyMembers.length) !== 1 ? 's' : ''}
               </span>
             </div>
 
-            {familyMembers.length === 0 ? (
+            {(isSupabaseAuth ? liveParticipants.length === 0 : familyMembers.length === 0) ? (
               <div className="text-center py-12">
                 <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No family members yet</h3>
@@ -375,48 +496,58 @@ const InviteFamilyPage = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {familyMembers.map((member) => (
+                {(isSupabaseAuth ? liveParticipants : familyMembers).map((member: any) => (
                   <div key={member.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
                     <div className="flex items-center space-x-4">
                       <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
                         <Heart className="w-6 h-6 text-purple-600" />
                       </div>
                       <div>
-                        <h3 className="font-medium text-gray-900">{member.name}</h3>
-                        <p className="text-sm text-gray-600">{member.email}</p>
-                        <p className="text-xs text-gray-500">{member.relationship}</p>
+                        <h3 className="font-medium text-gray-900">{isSupabaseAuth ? (member.name || 'Member') : member.name}</h3>
+                        <p className="text-sm text-gray-600">{isSupabaseAuth ? member.email : member.email}</p>
+                        <p className="text-xs text-gray-500">{isSupabaseAuth ? (member.role || member.relationship) : member.relationship}</p>
                       </div>
                     </div>
                     
                     <div className="flex items-center space-x-3">
-                      <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(member.status)}`}>
-                        {getStatusIcon(member.status)}
-                        <span className="capitalize">{member.status}</span>
-                      </div>
+                      {!isSupabaseAuth && (
+                        <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(member.status)}`}>
+                          {getStatusIcon(member.status)}
+                          <span className="capitalize">{member.status}</span>
+                        </div>
+                      )}
                       
                       <div className="text-right">
                         <p className="text-xs text-gray-500">Invited</p>
-                        <p className="text-xs text-gray-700">{formatDate(member.invitedAt)}</p>
+                        <p className="text-xs text-gray-700">{isSupabaseAuth ? new Date(member.created_at).toLocaleString() : formatDate(member.invitedAt)}</p>
                       </div>
                       
                       <div className="flex items-center space-x-2">
-                        {member.status === 'pending' && (
-                          <button
-                            onClick={() => handleResendInvite(member.email)}
-                            className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                            title="Resend invite"
-                          >
+                        {!isSupabaseAuth && member.status === 'pending' && (
+                          <button onClick={() => handleResendInvite(member.email)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Resend invite">
                             <Mail className="w-4 h-4" />
                           </button>
                         )}
-                        
-                        <button
-                          onClick={() => handleRemoveMember(member.id)}
-                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-                          title="Remove member"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        {isSupabaseAuth && member.role === 'VIEWER' && (
+                          <button
+                            onClick={() => {
+                              const params = new URLSearchParams({ personaId: member.persona_id });
+                              const link = `${window.location.origin}/chat?${params.toString()}`;
+                              navigator.clipboard.writeText(link);
+                              setCopiedEmail('link');
+                              setTimeout(() => setCopiedEmail(null), 1500);
+                            }}
+                            className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
+                            title="Copy Chat Link"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {!isSupabaseAuth && (
+                          <button onClick={() => handleRemoveMember(member.id)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Remove member">
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -462,6 +593,11 @@ const InviteFamilyPage = () => {
               </div>
 
               <form onSubmit={handleInvite} className="space-y-6">
+                {submitError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
+                    {submitError}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Full Name *

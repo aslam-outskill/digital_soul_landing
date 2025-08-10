@@ -41,6 +41,7 @@ export interface PersonaInvite {
   status: 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'REVOKED';
   invitedAt: string; // ISO string
   acceptedUserEmail?: string;
+  contributionCount?: number;
 }
 
 

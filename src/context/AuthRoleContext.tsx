@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Persona, PersonaInvite, PersonaMembership, PersonaRole } from '../types/persona';
-import { readMemberships, readPersonas, upsertPersona, assignMembership, deletePersona, readInvites, createInvite, writeInvites } from '../utils/localStore';
 import { deletePersonaAndMemberships } from '../services/supabaseHelpers';
 import { supabase } from '../utils/supabaseClient';
 
@@ -28,33 +27,22 @@ export function AuthRoleProvider({ children }: { children: React.ReactNode }) {
   const [invites, setInvites] = useState<PersonaInvite[]>([]);
 
   useEffect(() => {
-    // Seed mock data for demo personas/memberships/invites
-    setPersonas(readPersonas());
-    setMemberships(readMemberships());
-    setInvites(readInvites());
-
-    // Initialize from Supabase auth
+    // Initialize from Supabase auth only (demo removed)
     (async () => {
       const { data } = await supabase.auth.getUser();
       const supaEmail = data.user?.email ?? null;
       if (supaEmail) {
         setCurrentUserEmail(supaEmail);
         setIsSupabaseAuth(true);
-        // Ignore demo data when authenticated; keep demo in localStorage for later
         setPersonas([]);
         setMemberships([]);
         setInvites([]);
       } else {
-        // Fallback to local demo auth
-        try {
-          const raw = localStorage.getItem('userInfo');
-          const parsed = raw ? JSON.parse(raw) : null;
-          setCurrentUserEmail(parsed?.email ?? null);
-          setIsSupabaseAuth(false);
-        } catch {
-          setCurrentUserEmail(null);
-          setIsSupabaseAuth(false);
-        }
+        setCurrentUserEmail(null);
+        setIsSupabaseAuth(false);
+        setPersonas([]);
+        setMemberships([]);
+        setInvites([]);
       }
     })();
 
@@ -68,75 +56,33 @@ export function AuthRoleProvider({ children }: { children: React.ReactNode }) {
         setInvites([]);
       } else {
         setIsSupabaseAuth(false);
-        // Re-load demo data for demo mode
-        setPersonas(readPersonas());
-        setMemberships(readMemberships());
-        setInvites(readInvites());
+        setPersonas([]);
+        setMemberships([]);
+        setInvites([]);
       }
     });
 
-    const onDemoAuthChanged = () => {
-      // Only apply demo fallback if there is no Supabase session
-      supabase.auth.getUser().then(({ data: u }) => {
-        if (!u.user) {
-          try {
-            const raw = localStorage.getItem('userInfo');
-            const parsed = raw ? JSON.parse(raw) : null;
-            setCurrentUserEmail(parsed?.email ?? null);
-            setIsSupabaseAuth(false);
-          } catch {
-            setCurrentUserEmail(null);
-            setIsSupabaseAuth(false);
-          }
-        }
-      });
-    };
-    window.addEventListener('ds-auth-changed', onDemoAuthChanged as EventListener);
-
     return () => {
       data?.subscription?.unsubscribe?.();
-      window.removeEventListener('ds-auth-changed', onDemoAuthChanged as EventListener);
     };
   }, []);
 
   const refresh = () => {
-    setPersonas(readPersonas());
-    setMemberships(readMemberships());
-    setInvites(readInvites());
+    // No-op in live-only mode (state is fetched per-page)
   };
 
   const addPersona = (persona: Persona) => {
-    upsertPersona(persona);
-    setPersonas(prev => {
-      const idx = prev.findIndex(p => p.id === persona.id);
-      if (idx >= 0) {
-        const copy = prev.slice();
-        copy[idx] = persona;
-        return copy;
-      }
-      return [...prev, persona];
-    });
+    // No-op in live-only mode
   };
 
   const setMembership = (personaId: string, userEmail: string, role: PersonaRole) => {
-    assignMembership(personaId, userEmail, role);
-    setMemberships(prev => {
-      const idx = prev.findIndex(m => m.personaId === personaId && m.userEmail === userEmail);
-      if (idx >= 0) {
-        const copy = prev.slice();
-        copy[idx] = { ...copy[idx], role };
-        return copy;
-      }
-      return [...prev, { personaId, userEmail, role }];
-    });
+    // No-op in live-only mode
   };
 
   const removePersona = (personaId: string) => {
     if (isSupabaseAuth) {
       // Fire and forget; UI already filtered by owner role
       deletePersonaAndMemberships(personaId).catch(() => {});
-    } else {
-      deletePersona(personaId);
     }
     setPersonas(prev => prev.filter(p => p.id !== personaId));
     setMemberships(prev => prev.filter(m => m.personaId !== personaId));
@@ -144,8 +90,7 @@ export function AuthRoleProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addInvite = (invite: PersonaInvite) => {
-    createInvite(invite);
-    setInvites(prev => [...prev, invite]);
+    // No-op in live-only mode (pages call Supabase directly)
   };
 
   const getRoleForPersona = useMemo(() => {

@@ -65,6 +65,7 @@ const PersonaSetupPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [basicInfoError, setBasicInfoError] = useState<string | null>(null);
+  const [whoError, setWhoError] = useState<string | null>(null);
   const { addPersona, setMembership, currentUserEmail, isSupabaseAuth } = useAuthRole();
 
   // Scroll to top and detect auth mode
@@ -224,6 +225,13 @@ const PersonaSetupPage = () => {
   };
 
   const handleNext = () => {
+    if (currentStep === 0) {
+      if (!creatorType) {
+        setWhoError('Please choose who this persona is for.');
+        return;
+      }
+      setWhoError(null);
+    }
     if (currentStep === 1) {
       const name = (personaData.basicInfo.name || '').trim();
       if (!name) {
@@ -382,7 +390,7 @@ const PersonaSetupPage = () => {
                 <div className="grid md:grid-cols-2 gap-4">
                   <button
                     type="button"
-                    onClick={() => { setCreatorType('SELF'); setConsentType('SELF_ATTESTED'); setCurrentStep(1); }}
+                    onClick={() => { setWhoError(null); setCreatorType('SELF'); setConsentType('SELF_ATTESTED'); setCurrentStep(1); }}
                     className={`p-6 rounded-xl border-2 text-left transition-colors ${
                       creatorType === 'SELF' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
                     }`}
@@ -392,7 +400,7 @@ const PersonaSetupPage = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCreatorType('OTHER')}
+                    onClick={() => { setWhoError(null); setCreatorType('OTHER'); }}
                     className={`p-6 rounded-xl border-2 text-left transition-colors ${
                       creatorType === 'OTHER' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
                     }`}
@@ -414,7 +422,7 @@ const PersonaSetupPage = () => {
                         <button
                           key={opt.v}
                           type="button"
-                          onClick={() => { setConsentType(opt.v as any); setCurrentStep(1); }}
+                          onClick={() => { setWhoError(null); setConsentType(opt.v as any); setCurrentStep(1); }}
                           className={`p-4 rounded-lg border-2 text-left transition-colors ${
                             consentType === (opt.v as any) ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
                           }`}
@@ -425,6 +433,9 @@ const PersonaSetupPage = () => {
                     </div>
                     <p className="text-xs text-gray-500">We’ll record this choice and allow uploading a consent document later.</p>
                   </div>
+                )}
+                {whoError && (
+                  <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{whoError}</div>
                 )}
               </div>
             )}

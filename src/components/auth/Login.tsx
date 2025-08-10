@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, ArrowLeft, User } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ArrowLeft } from 'lucide-react';
 import Logo from '../Logo';
 import { supabase } from '../../utils/supabaseClient';
 
@@ -21,12 +21,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Demo user credentials
-  const demoUser = {
-    email: 'demo@digitalsoulapp.ch',
-    password: 'demo123',
-    name: 'Demo User'
-  };
+  // Demo removed
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -38,18 +33,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
     if (error) setError('');
   };
 
-  const handleDemoLogin = () => {
-    setFormData({
-      email: demoUser.email,
-      password: demoUser.password,
-      rememberMe: false
-    });
-    // Persist demo auth
-    localStorage.setItem('userInfo', JSON.stringify({ email: demoUser.email, name: demoUser.name, isDemo: true }));
-    window.dispatchEvent(new Event('ds-auth-changed'));
-    onClose();
-    navigate('/persona-setup');
-  };
+  // Demo removed
 
   const handleLogin = async (email: string, password: string) => {
     try {
@@ -62,7 +46,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
       localStorage.removeItem('userInfo');
       window.dispatchEvent(new Event('ds-auth-changed'));
       onClose();
-      navigate('/persona-setup');
+      navigate('/dashboard');
     } catch (e: any) {
       setError(e.message || 'Sign in failed');
     } finally {
@@ -97,29 +81,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
             <p className="text-gray-600">Sign in to continue your Digital Soul journey</p>
           </div>
 
-          {/* Demo Login Button */}
-          <div className="mb-6">
-            <button
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-4 rounded-xl font-semibold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {isLoading ? (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  <span>Signing in...</span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center space-x-2">
-                  <User className="w-5 h-5" />
-                  <span>Try Demo Account</span>
-                </div>
-              )}
-            </button>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              Use demo account to explore the persona setup
-            </p>
-          </div>
+          {/* Demo removed */}
 
           {/* Divider */}
           <div className="flex items-center mb-6">
@@ -268,16 +230,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
               <span className="text-gray-700 font-medium">Continue with Google</span>
             </button>
             
-            <button 
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-              </svg>
-              <span className="text-gray-700 font-medium">Continue with Facebook</span>
-            </button>
+            {/* Other providers removed */}
           </div>
 
           {/* Sign up link */}

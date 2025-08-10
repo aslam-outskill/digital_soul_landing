@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MessageCircle, Users, Settings, Heart, X } from 'lucide-react';
 import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
-import { listMyMemberships, listMyPersonas, getCurrentUserId, deletePersonaAndMemberships } from '../services/supabaseHelpers';
+import { listMyMemberships, listMyPersonas, getCurrentUserId, deletePersonaAndMemberships, listInvitesForPersonaIds, listActivitiesForOwnerPersonaIds, listPendingContributionsForOwner, approveOrRejectContribution, deleteContribution } from '../services/supabaseHelpers';
 
 const DashboardPage = () => {
   const navigate = useNavigate();
@@ -47,6 +47,68 @@ const DashboardPage = () => {
       return personas.filter(p => ids.includes(p.id));
     }
   }, [currentUserEmail, memberships, personas, isSupabaseAuth, livePersonas, liveMemberships, currentUserId]);
+
+  const [liveInvites, setLiveInvites] = useState<any[]>([]);
+  const [liveActivities, setLiveActivities] = useState<any[]>([]);
+  const [liveContributions, setLiveContributions] = useState<any[]>([]);
+  const [isApproving, setIsApproving] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseAuth) return;
+    const personaIds = livePersonas.map(p => p.id);
+    if (personaIds.length === 0) {
+      setLiveInvites([]);
+      setLiveActivities([]);
+      setLiveContributions([]);
+      return;
+    }
+    const load = async () => {
+      try {
+        const [inv, acts, contribs] = await Promise.all([
+          listInvitesForPersonaIds(personaIds).catch(() => []),
+          listActivitiesForOwnerPersonaIds(personaIds).catch(() => []),
+          listPendingContributionsForOwner(personaIds).catch(() => [])
+        ]);
+        setLiveInvites(inv as any[]);
+        setLiveActivities(acts as any[]);
+        setLiveContributions(contribs as any[]);
+      } catch {
+        setLiveInvites([]);
+        setLiveActivities([]);
+        setLiveContributions([]);
+      }
+    };
+    load();
+  }, [isSupabaseAuth, livePersonas]);
+
+  const activities = useMemo(() => {
+    type Activity = { at: number; title: string; detail?: string };
+    const items: Activity[] = [];
+    if (isSupabaseAuth) {
+      for (const p of livePersonas) {
+        const createdAt = new Date((p.created_at || p.createdAt || Date.now())).getTime();
+        items.push({ at: createdAt, title: `Persona created`, detail: p.name || 'Unnamed persona' });
+      }
+      for (const inv of liveInvites) {
+        const invitedAt = new Date(inv.invited_at || inv.invitedAt || Date.now()).getTime();
+        if (inv.status === 'ACCEPTED') {
+          items.push({ at: invitedAt, title: `Invite accepted`, detail: inv.email });
+        } else if (inv.status === 'PENDING') {
+          items.push({ at: invitedAt, title: `Invite sent`, detail: inv.email });
+        }
+        // Placeholder for contributions once stored in DB
+      }
+      for (const a of liveActivities) {
+        const at = new Date(a.created_at || Date.now()).getTime();
+        if (a.activity_type === 'CONTRIBUTION') {
+          items.push({ at, title: `New contribution`, detail: a.actor_email || 'Contributor' });
+        }
+      }
+    } else {
+      // Demo: do not show activities per request
+    }
+    return items.sort((a, b) => b.at - a.at).slice(0, 10);
+  }, [isSupabaseAuth, livePersonas, liveInvites, liveActivities]);
 
   const roleFor = (personaId: string) => {
     if (isSupabaseAuth) {
@@ -160,7 +222,10 @@ const DashboardPage = () => {
                     <MessageCircle className="w-4 h-4" />
                     <span>Chat</span>
                   </button>
-                  <button onClick={() => navigate('/invite-family')} className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                  <button onClick={() => {
+                    const nm = isSupabaseAuth ? (p.name || 'Persona') : p.subjectFullName
+                    navigate(`/invite-family?personaId=${encodeURIComponent(p.id)}&name=${encodeURIComponent(nm)}`)
+                  }} className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
                     <Users className="w-4 h-4" />
                     <span>Invite</span>
                   </button>
@@ -173,11 +238,103 @@ const DashboardPage = () => {
             ))}
           </div>
 
-          {/* Recent Activity placeholder */}
+          {/* Recent Activity */}
           <div className="mt-12 bg-white rounded-2xl shadow-lg p-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
-            <p className="text-sm text-gray-600">Activity will appear here as you create and share personas.</p>
+            {activities.length === 0 ? (
+              <p className="text-sm text-gray-600">No recent activity yet.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {activities.map((a, idx) => (
+                  <li key={idx} className="py-3 flex items-center justify-between">
+                    <div>
+                      <div className="text-gray-900 font-medium">{a.title}</div>
+                      {a.detail && <div className="text-gray-600 text-sm">{a.detail}</div>}
+                    </div>
+                    <div className="text-xs text-gray-500">{new Date(a.at).toLocaleString()}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+
+          {/* Pending Contributions (Owner Approval) */}
+          {isSupabaseAuth && (
+            <div className="mt-6 bg-white rounded-2xl shadow-lg p-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Pending Contributions</h2>
+              {liveContributions.length === 0 ? (
+                <p className="text-sm text-gray-600">No pending contributions.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {liveContributions.map((c: any) => {
+                    const info = (c.content?.personalInfo) || {};
+                    const memories = c.content?.memories || {};
+                    const storiesCount = (memories.stories?.length) || 0;
+                    const photosCount = (memories.photos?.length) || 0;
+                    const videosCount = (memories.videos?.length) || 0;
+                    const voicesCount = (memories.voiceRecordings?.length) || 0;
+                    return (
+                      <li key={c.id} className="py-4 flex items-start justify-between">
+                        <div>
+                          <div className="text-gray-900 font-medium">{c.submitted_email || info.email || 'Contributor'}</div>
+                          <div className="text-gray-600 text-sm">{new Date(c.created_at).toLocaleString()}</div>
+                          <div className="text-gray-600 text-sm mt-1">
+                            {info.name ? `Name: ${info.name} • ` : ''}
+                            {info.relationship ? `Relationship: ${info.relationship}` : ''}
+                          </div>
+                          <div className="text-gray-500 text-xs mt-1">
+                            {`Stories: ${storiesCount} • Photos: ${photosCount} • Videos: ${videosCount} • Voice: ${voicesCount}`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-4">
+                          <button
+                            onClick={async () => {
+                              setIsApproving(c.id);
+                              try {
+                                await approveOrRejectContribution({ id: c.id, status: 'APPROVED' });
+                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                              } finally {
+                                setIsApproving(null);
+                              }
+                            }}
+                            disabled={isApproving === c.id}
+                            className="px-3 py-1 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50"
+                          >Approve</button>
+                          <button
+                            onClick={async () => {
+                              setIsApproving(c.id);
+                              try {
+                                await approveOrRejectContribution({ id: c.id, status: 'REJECTED' });
+                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                              } finally {
+                                setIsApproving(null);
+                              }
+                            }}
+                            disabled={isApproving === c.id}
+                            className="px-3 py-1 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
+                          >Reject</button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Delete this submission permanently?')) return;
+                              setIsApproving(c.id);
+                              try {
+                                await deleteContribution({ id: c.id });
+                                setLiveContributions(prev => prev.filter(x => x.id !== c.id));
+                              } finally {
+                                setIsApproving(null);
+                              }
+                            }}
+                            disabled={isApproving === c.id}
+                            className="px-3 py-1 rounded-lg bg-gray-200 text-gray-800 text-sm hover:bg-gray-300 disabled:opacity-50"
+                          >Delete</button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
