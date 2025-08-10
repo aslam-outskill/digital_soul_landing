@@ -16,7 +16,7 @@ import {
 import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { supabase } from '../utils/supabaseClient';
-import { getPersonaById, logPersonaContribution, submitPersonaContribution, acceptInviteAndCreateMembership } from '../services/supabaseHelpers';
+import { getPersonaById, logPersonaContribution, submitPersonaContribution, acceptInviteAndCreateMembership, uploadPersonaMedia } from '../services/supabaseHelpers';
 import { readInvites, writeInvites } from '../utils/localStore';
 
 interface ContributionData {
@@ -290,7 +290,34 @@ const ContributorPage = () => {
     const pid = inv?.personaId || personaIdParam;
     if (pid && supabase && currentUserEmail) {
       try {
-        await submitPersonaContribution({ personaId: pid, content: contributionData });
+        // Upload media first and replace File objects with signed URLs metadata
+        const sanitized = JSON.parse(JSON.stringify(contributionData));
+        sanitized.memories.photos = await Promise.all((contributionData.memories.photos || []).map(async (p: any) => {
+          try {
+            const { signedUrl, path } = await uploadPersonaMedia({ personaId: pid, file: p.file });
+            return { title: p.title, description: p.description, date: p.date, location: p.location, url: signedUrl, path };
+          } catch {
+            return { title: p.title, description: p.description, date: p.date, location: p.location };
+          }
+        }));
+        sanitized.memories.videos = await Promise.all((contributionData.memories.videos || []).map(async (v: any) => {
+          try {
+            const { signedUrl, path } = await uploadPersonaMedia({ personaId: pid, file: v.file });
+            return { title: v.title, description: v.description, date: v.date, location: v.location, url: signedUrl, path };
+          } catch {
+            return { title: v.title, description: v.description, date: v.date, location: v.location };
+          }
+        }));
+        sanitized.memories.voiceRecordings = await Promise.all((contributionData.memories.voiceRecordings || []).map(async (a: any) => {
+          try {
+            const { signedUrl, path } = await uploadPersonaMedia({ personaId: pid, file: a.file });
+            return { title: a.title, description: a.description, date: a.date, url: signedUrl, path };
+          } catch {
+            return { title: a.title, description: a.description, date: a.date };
+          }
+        }));
+        await submitPersonaContribution({ personaId: pid, content: sanitized });
+        await logPersonaContribution({ personaId: pid, summary: 'New contribution submitted' });
       } catch {}
     } else {
       // Simulate API call for demo

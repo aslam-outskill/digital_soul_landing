@@ -160,6 +160,7 @@ export async function submitPersonaContribution(params: { personaId: string; con
     persona_id: params.personaId,
     submitted_by: user.id,
     submitted_email: user.email,
+    status: 'PENDING',
     content: params.content
   }
   const { error } = await (supabase as any)

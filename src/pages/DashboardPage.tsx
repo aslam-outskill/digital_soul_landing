@@ -56,8 +56,10 @@ const DashboardPage = () => {
 
   useEffect(() => {
     if (!isSupabaseAuth) return;
-    const personaIds = livePersonas.map(p => p.id);
-    if (personaIds.length === 0) {
+    const ownerIds = livePersonas
+      .filter(p => (currentUserId && p.created_by === currentUserId) || liveMemberships.some(m => m.persona_id === p.id && ['OWNER','CUSTODIAN'].includes(String(m.role).toUpperCase())))
+      .map(p => p.id);
+    if (ownerIds.length === 0) {
       setLiveInvites([]);
       setLiveActivities([]);
       setLiveContributions([]);
@@ -66,9 +68,9 @@ const DashboardPage = () => {
     const load = async () => {
       try {
         const [inv, acts, contribs] = await Promise.all([
-          listInvitesForPersonaIds(personaIds).catch(() => []),
-          listActivitiesForOwnerPersonaIds(personaIds).catch(() => []),
-          listPendingContributionsForOwner(personaIds).catch(() => [])
+          listInvitesForPersonaIds(ownerIds).catch(() => []),
+          listActivitiesForOwnerPersonaIds(ownerIds).catch(() => []),
+          listPendingContributionsForOwner(ownerIds).catch(() => [])
         ]);
         setLiveInvites(inv as any[]);
         setLiveActivities(acts as any[]);
@@ -80,7 +82,9 @@ const DashboardPage = () => {
       }
     };
     load();
-  }, [isSupabaseAuth, livePersonas]);
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [isSupabaseAuth, livePersonas, liveMemberships, currentUserId]);
 
   const activities = useMemo(() => {
     type Activity = { at: number; title: string; detail?: string };
