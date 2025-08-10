@@ -50,6 +50,8 @@ const ContributorPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // kept for potential future gating but unused in anon flow
+  // const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [inviteStatus, setInviteStatus] = useState<'PENDING' | 'INVALID' | 'ACCEPTED'>('PENDING');
   
   const [contributionData, setContributionData] = useState<ContributionData>({
@@ -147,6 +149,9 @@ const ContributorPage = () => {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // Track auth state
+  // Auth tracking removed to allow anonymous invite-based submissions
 
   useEffect(() => {
     const roleParam = (searchParams.get('role') || '').toUpperCase();
@@ -290,8 +295,9 @@ const ContributorPage = () => {
     const list = readInvites();
     const inv = list.find(i => i.token === token);
     const pid = inv?.personaId || personaIdParam;
-    if (pid && supabase && currentUserEmail) {
+    if (pid && supabase) {
       try {
+        const inviteToken = searchParams.get('invitation') || undefined;
         // Upload media first and replace File objects with signed URLs metadata
         const sanitized = JSON.parse(JSON.stringify(contributionData));
         sanitized.memories.photos = await Promise.all((contributionData.memories.photos || []).map(async (p: any) => {
@@ -318,7 +324,7 @@ const ContributorPage = () => {
             return { title: a.title, description: a.description, date: a.date };
           }
         }));
-        await submitPersonaContribution({ personaId: pid, content: sanitized });
+        await submitPersonaContribution({ personaId: pid, content: sanitized, inviteToken });
         await logPersonaContribution({ personaId: pid, summary: 'New contribution submitted' });
       } catch (e: any) {
         setSubmitError(e?.message || 'Failed to submit contribution');
@@ -488,6 +494,7 @@ const ContributorPage = () => {
               Help Enrich {personaName}'s Story
             </h1>
             {acceptedBanner}
+            {/* Sign-in prompt removed to allow anon invite-based submissions */}
             {submitError && (
               <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
                 {submitError}

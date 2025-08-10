@@ -52,14 +52,13 @@ const DashboardPage = () => {
   const [liveActivities, setLiveActivities] = useState<any[]>([]);
   const [liveContributions, setLiveContributions] = useState<any[]>([]);
   const [isApproving, setIsApproving] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!isSupabaseAuth) return;
-    const ownerIds = livePersonas
-      .filter(p => (currentUserId && p.created_by === currentUserId) || liveMemberships.some(m => m.persona_id === p.id && ['OWNER','CUSTODIAN'].includes(String(m.role).toUpperCase())))
-      .map(p => p.id);
-    if (ownerIds.length === 0) {
+    const personaIds = livePersonas.map(p => p.id);
+    if (personaIds.length === 0) {
       setLiveInvites([]);
       setLiveActivities([]);
       setLiveContributions([]);
@@ -67,18 +66,20 @@ const DashboardPage = () => {
     }
     const load = async () => {
       try {
+        setLoadError(null);
         const [inv, acts, contribs] = await Promise.all([
-          listInvitesForPersonaIds(ownerIds).catch(() => []),
-          listActivitiesForOwnerPersonaIds(ownerIds).catch(() => []),
-          listPendingContributionsForOwner(ownerIds).catch(() => [])
+          listInvitesForPersonaIds(personaIds),
+          listActivitiesForOwnerPersonaIds(personaIds),
+          listPendingContributionsForOwner(personaIds)
         ]);
         setLiveInvites(inv as any[]);
         setLiveActivities(acts as any[]);
         setLiveContributions(contribs as any[]);
-      } catch {
+      } catch (e: any) {
         setLiveInvites([]);
         setLiveActivities([]);
         setLiveContributions([]);
+        setLoadError(e?.message || 'Failed to load data');
       }
     };
     load();
@@ -191,7 +192,7 @@ const DashboardPage = () => {
               <p className="text-gray-700 mb-6">
                 For yourself or for a loved one. Capture memories, voice, and stories.
               </p>
-              <button
+              <button 
                 onClick={() => navigate('/persona-setup')}
                 className="w-full bg-purple-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-purple-700 transition-colors"
               >
@@ -202,20 +203,20 @@ const DashboardPage = () => {
             {myPersonas.map(p => (
               <div key={p.id} className="relative bg-white rounded-2xl shadow-lg p-8 hover:shadow-xl transition-shadow">
                 {roleFor(p.id) === 'OWNER' && (
-                  <button
+              <button 
                     aria-label="Delete persona"
                     title="Delete persona"
                     onClick={() => handleDeletePersona(p)}
                     className="absolute top-3 right-3 p-2 rounded-full text-red-600 hover:bg-red-50"
                   >
                     <X className="w-4 h-4" />
-                  </button>
+              </button>
                 )}
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">{isSupabaseAuth ? (p.name || 'Unnamed') : p.subjectFullName}</h3>
                     <p className="text-sm text-gray-500">Created {new Date((p.createdAt || p.created_at)).toLocaleDateString()}</p>
-                  </div>
+            </div>
                   <span className="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-700 capitalize">my role: {roleFor(p.id).toLowerCase()}</span>
                 </div>
                 <p className="text-sm text-gray-600 mb-6">Privacy: {(isSupabaseAuth ? (p.privacy || 'PRIVATE') : p.privacy).toLowerCase()}</p>
@@ -267,6 +268,11 @@ const DashboardPage = () => {
           {isSupabaseAuth && (
             <div className="mt-6 bg-white rounded-2xl shadow-lg p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Pending Contributions</h2>
+              {loadError && (
+                <div className="mb-3 p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+                  {loadError}
+                </div>
+              )}
               {liveContributions.length === 0 ? (
                 <p className="text-sm text-gray-600">No pending contributions.</p>
               ) : (
@@ -419,10 +425,10 @@ const DashboardPage = () => {
                                       {a.description && <div className="text-xs text-gray-600">{a.description}</div>}
                                     </div>
                                   ))}
-                                </div>
-                              </div>
+              </div>
+                </div>
                             )}
-                          </div>
+              </div>
                         )}
                       </li>
                     );

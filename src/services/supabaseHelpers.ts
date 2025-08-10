@@ -127,7 +127,8 @@ export async function acceptInviteAndCreateMembership(params: { token: string })
 export async function logPersonaContribution(params: { personaId: string; summary?: string }) {
   if (!supabase) throw new Error('Supabase not configured')
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
+  // If not signed in (anonymous invite flow), skip logging to activities to avoid RLS issues
+  if (!user) return
   const { error } = await (supabase as any)
     .from('persona_activities')
     .insert({
@@ -152,16 +153,16 @@ export async function listActivitiesForOwnerPersonaIds(personaIds: string[]) {
   return data as any[]
 }
 
-export async function submitPersonaContribution(params: { personaId: string; content: any }) {
+export async function submitPersonaContribution(params: { personaId: string; content: any; inviteToken?: string }) {
   if (!supabase) throw new Error('Supabase not configured')
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
   const payload: any = {
     persona_id: params.personaId,
-    submitted_by: user.id,
-    submitted_email: user.email,
+    submitted_by: user?.id ?? null,
+    submitted_email: user?.email ?? null,
     status: 'PENDING',
-    content: params.content
+    content: params.content,
+    invite_token: params.inviteToken ?? null
   }
   const { error } = await (supabase as any)
     .from('persona_contributions')
