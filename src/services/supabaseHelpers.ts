@@ -60,13 +60,31 @@ export async function listInvitesForPersonaIds(personaIds: string[]) {
 export async function listParticipantsForPersonaIds(personaIds: string[]) {
   if (!supabase) throw new Error('Supabase not configured')
   if (!personaIds || personaIds.length === 0) return [] as any[]
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('persona_participants')
     .select('*')
     .in('persona_id', personaIds)
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return data as any[]
+}
+
+export async function removeParticipantAndMembership(params: { personaId: string; userId: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  // Remove participant record (visible in Family Members)
+  const { error: partErr } = await (supabase as any)
+    .from('persona_participants')
+    .delete()
+    .eq('persona_id', params.personaId)
+    .eq('user_id', params.userId)
+  if (partErr) throw new Error(partErr.message)
+  // Remove membership to revoke access
+  const { error: memErr } = await supabase
+    .from('persona_memberships')
+    .delete()
+    .eq('persona_id', params.personaId)
+    .eq('user_id', params.userId)
+  if (memErr) throw new Error(memErr.message)
 }
 
 export async function acceptInviteAndCreateMembership(params: { token: string }) {
@@ -94,7 +112,7 @@ export async function acceptInviteAndCreateMembership(params: { token: string })
     .insert({ persona_id: inv.persona_id, user_id: user.id, role: inv.role })
   if (memErr) throw new Error(memErr.message)
   // Upsert participant profile
-  await supabase
+  await (supabase as any)
     .from('persona_participants')
     .upsert({
       persona_id: inv.persona_id,
@@ -110,7 +128,7 @@ export async function logPersonaContribution(params: { personaId: string; summar
   if (!supabase) throw new Error('Supabase not configured')
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('persona_activities')
     .insert({
       persona_id: params.personaId,
@@ -125,7 +143,7 @@ export async function logPersonaContribution(params: { personaId: string; summar
 export async function listActivitiesForOwnerPersonaIds(personaIds: string[]) {
   if (!supabase) throw new Error('Supabase not configured')
   if (!personaIds || personaIds.length === 0) return [] as any[]
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('persona_activities')
     .select('*')
     .in('persona_id', personaIds)
@@ -138,13 +156,13 @@ export async function submitPersonaContribution(params: { personaId: string; con
   if (!supabase) throw new Error('Supabase not configured')
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-  const payload = {
+  const payload: any = {
     persona_id: params.personaId,
     submitted_by: user.id,
     submitted_email: user.email,
     content: params.content
-  } as TablesInsert<'persona_contributions'>
-  const { error } = await supabase
+  }
+  const { error } = await (supabase as any)
     .from('persona_contributions')
     .insert(payload)
   if (error) throw new Error(error.message)
@@ -153,7 +171,7 @@ export async function submitPersonaContribution(params: { personaId: string; con
 export async function listPendingContributionsForOwner(personaIds: string[]) {
   if (!supabase) throw new Error('Supabase not configured')
   if (!personaIds || personaIds.length === 0) return [] as any[]
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('persona_contributions')
     .select('*')
     .in('persona_id', personaIds)
@@ -165,7 +183,7 @@ export async function listPendingContributionsForOwner(personaIds: string[]) {
 
 export async function approveOrRejectContribution(params: { id: string; status: 'APPROVED'|'REJECTED' }) {
   if (!supabase) throw new Error('Supabase not configured')
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('persona_contributions')
     .update({ status: params.status })
     .eq('id', params.id)
@@ -174,7 +192,7 @@ export async function approveOrRejectContribution(params: { id: string; status: 
 
 export async function deleteContribution(params: { id: string }) {
   if (!supabase) throw new Error('Supabase not configured')
-  const { error } = await supabase
+  const { error } = await (supabase as any)
     .from('persona_contributions')
     .delete()
     .eq('id', params.id)

@@ -17,7 +17,7 @@ import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { PersonaInvite, PersonaRole } from '../types/persona';
 import { createInvite as createInviteLive } from '../services/supabaseHelpers';
-import { listInvitesForPersonaIds, listParticipantsForPersonaIds } from '../services/supabaseHelpers';
+import { listInvitesForPersonaIds, listParticipantsForPersonaIds, listMyMemberships, getCurrentUserId, removeParticipantAndMembership } from '../services/supabaseHelpers';
 
 interface FamilyMember {
   id: string;
@@ -51,6 +51,7 @@ const InviteFamilyPage = () => {
   const [liveInvites, setLiveInvites] = useState<any[]>([]);
   const [liveParticipants, setLiveParticipants] = useState<any[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [canManageMembers, setCanManageMembers] = useState<boolean>(false);
 
   // Scroll to top when component mounts
   useEffect(() => {
@@ -82,9 +83,21 @@ const InviteFamilyPage = () => {
           setLiveInvites(res as any[]);
           const parts = await listParticipantsForPersonaIds([pid]);
           setLiveParticipants(parts as any[]);
+          // determine owner/custodian rights for selected persona
+          const [uid, myMemberships] = await Promise.all([
+            getCurrentUserId(),
+            listMyMemberships()
+          ]);
+          const selected = personas.find(p => p.id === pid) as any;
+          const isOwner = !!uid && selected && selected.created_by === uid;
+          const mem = myMemberships.find(m => (m as any).persona_id === pid);
+          const isCustodian = !!mem && String((mem as any).role).toUpperCase() === 'CUSTODIAN';
+          const isOwnerRole = !!mem && String((mem as any).role).toUpperCase() === 'OWNER';
+          setCanManageMembers(Boolean(isOwner || isOwnerRole || isCustodian));
         } catch {
           setLiveInvites([]);
           setLiveParticipants([]);
+          setCanManageMembers(false);
         }
       } else {
         // In demo, derive familyMembers from local invites
@@ -116,6 +129,16 @@ const InviteFamilyPage = () => {
         setLiveInvites(res as any[]);
         const parts = await listParticipantsForPersonaIds([pid]);
         setLiveParticipants(parts as any[]);
+        const [uid, myMemberships] = await Promise.all([
+          getCurrentUserId(),
+          listMyMemberships()
+        ]);
+        const selected = personas.find(p => p.id === pid) as any;
+        const isOwner = !!uid && selected && selected.created_by === uid;
+        const mem = myMemberships.find(m => (m as any).persona_id === pid);
+        const isCustodian = !!mem && String((mem as any).role).toUpperCase() === 'CUSTODIAN';
+        const isOwnerRole = !!mem && String((mem as any).role).toUpperCase() === 'OWNER';
+        setCanManageMembers(Boolean(isOwner || isOwnerRole || isCustodian));
       } catch {}
     }, 5000);
     return () => clearInterval(id);
@@ -526,6 +549,23 @@ const InviteFamilyPage = () => {
                         {!isSupabaseAuth && member.status === 'pending' && (
                           <button onClick={() => handleResendInvite(member.email)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Resend invite">
                             <Mail className="w-4 h-4" />
+                          </button>
+                        )}
+                        {isSupabaseAuth && member.role === 'VIEWER' && canManageMembers && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await removeParticipantAndMembership({ personaId: member.persona_id, userId: member.user_id });
+                                const parts = await listParticipantsForPersonaIds([member.persona_id]);
+                                setLiveParticipants(parts as any[]);
+                              } catch (e: any) {
+                                alert(e?.message || 'Failed to remove viewer');
+                              }
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                            title="Remove viewer"
+                          >
+                            <X className="w-4 h-4" />
                           </button>
                         )}
                         {isSupabaseAuth && member.role === 'VIEWER' && (
