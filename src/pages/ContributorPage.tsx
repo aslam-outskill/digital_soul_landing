@@ -4,24 +4,18 @@ import {
   ArrowLeft, 
   Heart, 
   User, 
-  MessageCircle, 
-  Camera, 
   Mic, 
   Upload,
   X,
   Check,
-  Plus,
   Star,
-  Calendar,
-  MapPin,
   Users,
   FileText,
-  Music,
-  BookOpen,
-  Save,
   Send
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { useAuthRole } from '../context/AuthRoleContext';
+import { readInvites } from '../utils/localStore';
 
 interface ContributionData {
   personalInfo: {
@@ -30,9 +24,10 @@ interface ContributionData {
     email: string;
   };
   memories: {
-    stories: string[];
-    photos: File[];
-    voiceRecordings: File[];
+    stories: { title: string; text: string }[];
+    photos: { file: File; title: string; description: string; date?: string; location?: string }[];
+    videos: { file: File; title: string; description: string; date?: string; location?: string }[];
+    voiceRecordings: { file: File; title: string; description: string; date?: string }[];
   };
   personality: {
     traits: string[];
@@ -52,6 +47,7 @@ const ContributorPage = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [inviteStatus, setInviteStatus] = useState<'PENDING' | 'INVALID' | 'ACCEPTED'>('PENDING');
   
   const [contributionData, setContributionData] = useState<ContributionData>({
     personalInfo: {
@@ -62,6 +58,7 @@ const ContributorPage = () => {
     memories: {
       stories: [],
       photos: [],
+      videos: [],
       voiceRecordings: []
     },
     personality: {
@@ -77,12 +74,43 @@ const ContributorPage = () => {
   });
 
   // Get invitation data from URL params
-  const invitationId = searchParams.get('invitation');
-  const personaName = searchParams.get('name') || 'Sarah';
+  const invitationToken = searchParams.get('invitation');
+  const personaName = searchParams.get('name') || 'Digital Soul';
+  const { setMembership, currentUserEmail } = useAuthRole();
 
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, []);
+    const roleParam = (searchParams.get('role') || '').toUpperCase();
+    const personaIdParam = searchParams.get('personaId') || '';
+    if (!invitationToken) {
+      setInviteStatus('INVALID');
+      return;
+    }
+    const list = readInvites();
+    const inv = list.find(i => i.token === invitationToken);
+    // If found but not pending -> invalid
+    if (inv && inv.status !== 'PENDING') {
+      setInviteStatus('INVALID');
+      return;
+    }
+    // If not found, but we have fallback params (dev): accept using URL params
+    const targetPersonaId = inv?.personaId || personaIdParam;
+    const targetRole = (inv?.role || roleParam || 'VIEWER') as any;
+    if (!inv && !targetPersonaId) {
+      setInviteStatus('INVALID');
+      return;
+    }
+    // Simulate acceptance
+    setTimeout(() => {
+      if (!currentUserEmail || !targetPersonaId) return;
+      setMembership(targetPersonaId, currentUserEmail, targetRole);
+      if (inv) {
+        const updated = list.map(x => x.id === inv.id ? { ...x, status: 'ACCEPTED', acceptedUserEmail: currentUserEmail } : x);
+        localStorage.setItem('ds_persona_invites', JSON.stringify(updated));
+      }
+      setInviteStatus('ACCEPTED');
+    }, 400);
+  }, [invitationToken, currentUserEmail, setMembership, searchParams]);
 
   const handleInputChange = (section: keyof ContributionData, field: string, value: any) => {
     setContributionData(prev => ({
@@ -116,28 +144,46 @@ const ContributorPage = () => {
     }));
   };
 
-  const handleFileUpload = (section: keyof ContributionData, field: string, files: FileList | null) => {
-    if (files) {
-      const fileArray = Array.from(files);
-      setContributionData(prev => ({
-        ...prev,
-        [section]: {
-          ...prev[section],
-          [field]: [...(prev[section] as any)[field], ...fileArray]
-        }
-      }));
-    }
-  };
-
-  const removeFile = (section: keyof ContributionData, field: string, index: number) => {
+  const handleFileUpload = (
+    section: keyof ContributionData,
+    field: 'photos' | 'videos' | 'voiceRecordings',
+    files: FileList | null
+  ) => {
+    if (!files) return;
+    const fileArray = Array.from(files).map((f) => ({ file: f, title: '', description: '', date: '', location: '' }));
     setContributionData(prev => ({
       ...prev,
       [section]: {
         ...prev[section],
-        [field]: (prev[section] as any)[field].filter((_: any, i: number) => i !== index)
+        [field]: [...(prev[section] as any)[field], ...fileArray]
       }
     }));
   };
+
+  const removeMediaItem = (field: 'photos' | 'videos' | 'voiceRecordings', index: number) => {
+    setContributionData(prev => ({
+      ...prev,
+      memories: {
+        ...prev.memories,
+        [field]: (prev.memories as any)[field].filter((_: any, i: number) => i !== index)
+      }
+    }));
+  };
+
+  const updateMediaMeta = (
+    field: 'photos' | 'videos' | 'voiceRecordings',
+    index: number,
+    metaKey: 'title' | 'description' | 'date' | 'location',
+    value: string
+  ) => {
+    setContributionData(prev => {
+      const list = [...(prev.memories as any)[field]];
+      list[index] = { ...list[index], [metaKey]: value };
+      return { ...prev, memories: { ...prev.memories, [field]: list } } as ContributionData;
+    });
+  };
+
+  // Remove file helper not used in current UI; keep for future enhancements
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
@@ -156,6 +202,38 @@ const ContributorPage = () => {
     { id: 4, title: 'Relationships', icon: Users },
     { id: 5, title: 'Review & Submit', icon: Send }
   ];
+
+  if (inviteStatus === 'INVALID') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-rose-50">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <Logo />
+              <button onClick={() => navigate('/')} className="flex items-center space-x-2 text-gray-600 hover:text-purple-600 transition-colors">
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to home</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+        <div className="pt-20 pb-8">
+          <div className="max-w-3xl mx-auto px-4">
+            <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Invalid or Expired Invitation</h1>
+              <p className="text-gray-600">The invite link is invalid, revoked, or already accepted.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const acceptedBanner = inviteStatus === 'ACCEPTED' && (
+    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
+      Invitation accepted! Your access has been granted.
+    </div>
+  );
 
   if (submitted) {
     return (
@@ -250,6 +328,7 @@ const ContributorPage = () => {
             <h1 className="text-4xl font-bold text-gray-900 mb-4">
               Help Enrich {personaName}'s Story
             </h1>
+            {acceptedBanner}
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Share your memories, stories, and insights to help create a more complete and authentic digital persona.
             </p>
@@ -350,18 +429,49 @@ const ContributorPage = () => {
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Memories & Stories</h2>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Share a Story or Memory
-                  </label>
-                  <textarea
-                    rows={4}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    placeholder="Tell us about a special moment, memory, or story involving this person..."
-                  />
-                  <button className="mt-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors">
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-700">Share Stories</label>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <input type="text" placeholder="Story title" className="p-3 border border-gray-300 rounded-lg" id="storyTitleInput" />
+                    <textarea id="storyTextInput" rows={2} placeholder="Write a short story or memory..." className="p-3 border border-gray-300 rounded-lg" />
+                  </div>
+                  <button
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                    onClick={() => {
+                      const titleEl = document.getElementById('storyTitleInput') as HTMLInputElement;
+                      const textEl = document.getElementById('storyTextInput') as HTMLTextAreaElement;
+                      if (!titleEl?.value && !textEl?.value) return;
+                      setContributionData(prev => ({
+                        ...prev,
+                        memories: {
+                          ...prev.memories,
+                          stories: [...prev.memories.stories, { title: titleEl.value || 'Untitled', text: textEl.value || '' }]
+                        }
+                      }));
+                      if (titleEl) titleEl.value = '';
+                      if (textEl) textEl.value = '';
+                    }}
+                  >
                     Add Story
                   </button>
+                  {contributionData.memories.stories.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {contributionData.memories.stories.map((s, idx) => (
+                        <div key={idx} className="p-3 border border-gray-200 rounded-lg flex justify-between items-start">
+                          <div>
+                            <div className="font-medium text-gray-900">{s.title}</div>
+                            <div className="text-sm text-gray-700 whitespace-pre-line">{s.text}</div>
+                          </div>
+                          <button className="text-red-600 text-sm" onClick={() => {
+                            setContributionData(prev => ({
+                              ...prev,
+                              memories: { ...prev.memories, stories: prev.memories.stories.filter((_, i) => i !== idx) }
+                            }));
+                          }}>Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -379,19 +489,89 @@ const ContributorPage = () => {
                       className="hidden"
                     />
                   </div>
+                  {contributionData.memories.photos.length > 0 && (
+                    <div className="mt-3 space-y-3">
+                      {contributionData.memories.photos.map((p, idx) => (
+                        <div key={idx} className="p-3 border border-gray-200 rounded-lg">
+                          <div className="text-sm text-gray-700 truncate mb-2">{p.file.name}</div>
+                          <div className="grid md:grid-cols-4 gap-2">
+                            <input className="p-2 border rounded-lg" placeholder="Title" value={p.title} onChange={(e) => updateMediaMeta('photos', idx, 'title', e.target.value)} />
+                            <input className="p-2 border rounded-lg" placeholder="Description" value={p.description} onChange={(e) => updateMediaMeta('photos', idx, 'description', e.target.value)} />
+                            <input className="p-2 border rounded-lg" type="date" value={p.date || ''} onChange={(e) => updateMediaMeta('photos', idx, 'date', e.target.value)} />
+                            <input className="p-2 border rounded-lg" placeholder="Location" value={p.location || ''} onChange={(e) => updateMediaMeta('photos', idx, 'location', e.target.value)} />
+                          </div>
+                          <div className="mt-2 text-right">
+                            <button className="text-red-600 text-sm" onClick={() => removeMediaItem('photos', idx)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Voice Recordings
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload Videos</label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-600">Drag and drop videos here, or click to browse</p>
+                    <input
+                      type="file"
+                      multiple
+                      accept="video/*"
+                      onChange={(e) => handleFileUpload('memories', 'videos', e.target.files)}
+                      className="hidden"
+                    />
+                  </div>
+                  {contributionData.memories.videos.length > 0 && (
+                    <div className="mt-3 space-y-3">
+                      {contributionData.memories.videos.map((v, idx) => (
+                        <div key={idx} className="p-3 border border-gray-200 rounded-lg">
+                          <div className="text-sm text-gray-700 truncate mb-2">{v.file.name}</div>
+                          <div className="grid md:grid-cols-4 gap-2">
+                            <input className="p-2 border rounded-lg" placeholder="Title" value={v.title} onChange={(e) => updateMediaMeta('videos', idx, 'title', e.target.value)} />
+                            <input className="p-2 border rounded-lg" placeholder="Description" value={v.description} onChange={(e) => updateMediaMeta('videos', idx, 'description', e.target.value)} />
+                            <input className="p-2 border rounded-lg" type="date" value={v.date || ''} onChange={(e) => updateMediaMeta('videos', idx, 'date', e.target.value)} />
+                            <input className="p-2 border rounded-lg" placeholder="Location" value={v.location || ''} onChange={(e) => updateMediaMeta('videos', idx, 'location', e.target.value)} />
+                          </div>
+                          <div className="mt-2 text-right">
+                            <button className="text-red-600 text-sm" onClick={() => removeMediaItem('videos', idx)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Voice Recordings</label>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                     <Mic className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-600">Record or upload voice messages</p>
-                    <button className="mt-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors">
-                      Record Message
-                    </button>
+                    <p className="text-gray-600">Upload voice messages (optional)</p>
+                    <input
+                      type="file"
+                      multiple
+                      accept="audio/*"
+                      onChange={(e) => handleFileUpload('memories', 'voiceRecordings', e.target.files)}
+                      className="hidden"
+                    />
                   </div>
+                  {contributionData.memories.voiceRecordings.length > 0 && (
+                    <div className="mt-3 space-y-3">
+                      {contributionData.memories.voiceRecordings.map((a, idx) => (
+                        <div key={idx} className="p-3 border border-gray-200 rounded-lg">
+                          <div className="text-sm text-gray-700 truncate mb-2">{a.file.name}</div>
+                          <div className="grid md:grid-cols-3 gap-2">
+                            <input className="p-2 border rounded-lg" placeholder="Title" value={a.title} onChange={(e) => updateMediaMeta('voiceRecordings', idx, 'title', e.target.value)} />
+                            <input className="p-2 border rounded-lg" placeholder="Description" value={a.description} onChange={(e) => updateMediaMeta('voiceRecordings', idx, 'description', e.target.value)} />
+                            <input className="p-2 border rounded-lg" type="date" value={a.date || ''} onChange={(e) => updateMediaMeta('voiceRecordings', idx, 'date', e.target.value)} />
+                          </div>
+                          <div className="mt-2 text-right">
+                            <button className="text-red-600 text-sm" onClick={() => removeMediaItem('voiceRecordings', idx)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

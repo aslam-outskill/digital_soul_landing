@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, ArrowLeft, User } from 'lucide-react';
 import Logo from '../Logo';
+import { supabase } from '../../utils/supabaseClient';
 
 interface LoginProps {
   onClose: () => void;
@@ -22,7 +23,7 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
 
   // Demo user credentials
   const demoUser = {
-    email: 'demo@digitalsoul.com',
+    email: 'demo@digitalsoulapp.ch',
     password: 'demo123',
     name: 'Demo User'
   };
@@ -43,34 +44,30 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
       password: demoUser.password,
       rememberMe: false
     });
-    handleLogin(demoUser.email, demoUser.password);
+    // Persist demo auth
+    localStorage.setItem('userInfo', JSON.stringify({ email: demoUser.email, name: demoUser.name, isDemo: true }));
+    window.dispatchEvent(new Event('ds-auth-changed'));
+    onClose();
+    navigate('/persona-setup');
   };
 
   const handleLogin = async (email: string, password: string) => {
-    setIsLoading(true);
-    setError('');
-
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      setIsLoading(true);
+      setError('');
+      if (!supabase) throw new Error('Auth not configured');
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      // Ensure demo state is cleared for real users
+      localStorage.removeItem('userInfo');
+      window.dispatchEvent(new Event('ds-auth-changed'));
+      onClose();
+      navigate('/persona-setup');
+    } catch (e: any) {
+      setError(e.message || 'Sign in failed');
+    } finally {
       setIsLoading(false);
-      
-      // Static validation - accept any email/password or demo credentials
-      if (email && password) {
-        // Store user info in localStorage for demo purposes
-        const userInfo = {
-          email: email,
-          name: email === demoUser.email ? demoUser.name : 'User',
-          isDemo: email === demoUser.email
-        };
-        localStorage.setItem('userInfo', JSON.stringify(userInfo));
-        
-        // Close modal and redirect to persona setup
-        onClose();
-        navigate('/persona-setup');
-      } else {
-        setError('Please enter both email and password');
-      }
-    }, 1500);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -245,7 +242,20 @@ const Login = ({ onClose, onSwitchToRegister, onForgotPassword }: LoginProps) =>
           {/* Social login options */}
           <div className="space-y-3">
             <button 
-              onClick={handleDemoLogin}
+              onClick={async () => {
+                try {
+                  setIsLoading(true);
+                  setError('');
+                  if (!supabase) throw new Error('Auth not configured');
+                  const { data, error: oauthError } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+                  if (oauthError) throw oauthError;
+                  if (data?.url) window.location.assign(data.url);
+                } catch (e: any) {
+                  setError(e.message || 'Google sign-in failed');
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
               disabled={isLoading}
               className="w-full flex items-center justify-center space-x-3 py-3 px-4 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
             >

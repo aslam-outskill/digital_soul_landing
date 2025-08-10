@@ -9,24 +9,29 @@ import ChatPage from './pages/ChatPage';
 import InviteFamilyPage from './pages/InviteFamilyPage';
 import SettingsPage from './pages/SettingsPage';
 import ContributorPage from './pages/ContributorPage';
+import { AuthRoleProvider } from './context/AuthRoleContext';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
-          <Route path="/faq" element={<FAQPage />} />
-          <Route path="/persona-setup" element={<PersonaSetupPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/invite-family" element={<InviteFamilyPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/contributor" element={<ContributorPage />} />
-        </Routes>
-      </div>
-    </Router>
+    <AuthRoleProvider>
+      <Router>
+        <div className="min-h-screen">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/faq" element={<FAQPage />} />
+            <Route path="/persona-setup" element={<PersonaSetupPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/invite-family" element={<InviteFamilyPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/contributor" element={<ContributorPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+          </Routes>
+        </div>
+      </Router>
+    </AuthRoleProvider>
   );
 }
 

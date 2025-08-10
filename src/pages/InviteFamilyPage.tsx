@@ -7,7 +7,6 @@ import {
   Users, 
   Check, 
   X,
-  Copy,
   Share2,
   Heart,
   Shield,
@@ -15,6 +14,8 @@ import {
   User
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { useAuthRole } from '../context/AuthRoleContext';
+import { PersonaInvite, PersonaRole } from '../types/persona';
 
 interface FamilyMember {
   id: string;
@@ -34,25 +35,38 @@ const InviteFamilyPage = () => {
   const [inviteForm, setInviteForm] = useState({
     name: '',
     email: '',
-    relationship: ''
+    relationship: '',
+    role: 'VIEWER' as PersonaRole,
+    confirmOwnerAuthority: false,
   });
+  const { personas, invites, addInvite, currentUserEmail, isSupabaseAuth } = useAuthRole();
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+  const [showInvites, setShowInvites] = useState(true);
 
   // Scroll to top when component mounts
   useEffect(() => {
     window.scrollTo(0, 0);
-    
-    // Get user info from localStorage
-    const storedUserInfo = localStorage.getItem('userInfo');
-    if (storedUserInfo) {
-      setUserInfo(JSON.parse(storedUserInfo));
+    if (currentUserEmail) {
+      let isDemo = false;
+      if (!isSupabaseAuth) {
+        try { isDemo = JSON.parse(localStorage.getItem('userInfo') || 'null')?.isDemo ?? false; } catch {}
+      }
+      setUserInfo({ email: currentUserEmail, isDemo });
     } else {
-      navigate('/');
+      const storedUserInfo = localStorage.getItem('userInfo');
+      if (storedUserInfo) {
+        setUserInfo(JSON.parse(storedUserInfo));
+      } else {
+        navigate('/');
+      }
     }
+  }, [navigate, currentUserEmail, isSupabaseAuth]);
 
-    // Load demo family members for demo user
-    if (JSON.parse(storedUserInfo || '{}').isDemo) {
+  // Load demo family members only in demo mode
+  useEffect(() => {
+    if (userInfo?.isDemo) {
       setFamilyMembers([
         {
           id: '1',
@@ -60,7 +74,7 @@ const InviteFamilyPage = () => {
           email: 'emily.johnson@email.com',
           relationship: 'Daughter',
           status: 'accepted',
-          invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) // 2 days ago
+          invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
         },
         {
           id: '2',
@@ -68,7 +82,7 @@ const InviteFamilyPage = () => {
           email: 'michael.johnson@email.com',
           relationship: 'Son',
           status: 'pending',
-          invitedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
+          invitedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
         },
         {
           id: '3',
@@ -76,11 +90,11 @@ const InviteFamilyPage = () => {
           email: 'sophie.johnson@email.com',
           relationship: 'Granddaughter',
           status: 'accepted',
-          invitedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
+          invitedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
         }
       ]);
     }
-  }, [navigate]);
+  }, [userInfo]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -96,8 +110,23 @@ const InviteFamilyPage = () => {
 
     // Simulate API call
     setTimeout(() => {
+      const token = Math.random().toString(36).slice(2, 10);
+      const personaId = selectedPersonaId || personas[0]?.id || 'unknown';
+      const newInvite: PersonaInvite = {
+        id: `inv_${Date.now()}`,
+        personaId,
+        email: inviteForm.email,
+        name: inviteForm.name,
+        relationship: inviteForm.relationship,
+        role: inviteForm.role,
+        token,
+        status: 'PENDING',
+        invitedAt: new Date().toISOString(),
+      };
+      addInvite(newInvite);
+
       const newMember: FamilyMember = {
-        id: Date.now().toString(),
+        id: newInvite.id,
         name: inviteForm.name,
         email: inviteForm.email,
         relationship: inviteForm.relationship,
@@ -106,7 +135,9 @@ const InviteFamilyPage = () => {
       };
 
       setFamilyMembers(prev => [...prev, newMember]);
-      setInviteForm({ name: '', email: '', relationship: '' });
+      setCopiedEmail(inviteForm.email);
+      setTimeout(() => setCopiedEmail(null), 1500);
+      setInviteForm({ name: '', email: '', relationship: '', role: 'VIEWER', confirmOwnerAuthority: false });
       setShowInviteForm(false);
       setIsLoading(false);
     }, 1500);
@@ -123,7 +154,13 @@ const InviteFamilyPage = () => {
   };
 
   const copyInviteLink = () => {
-    const inviteLink = `${window.location.origin}/join-family?token=demo123`;
+    const latest = invites.slice(-1)[0];
+    const token = latest?.token || 'demo123';
+    const persona = personas.find(p => p.id === latest?.personaId);
+    const role = latest?.role || 'VIEWER';
+    const params = new URLSearchParams({ invitation: token, role: String(role), personaId: latest?.personaId || '' });
+    if (persona?.subjectFullName) params.set('name', persona.subjectFullName);
+    const inviteLink = `${window.location.origin}/contributor?${params.toString()}`;
     navigator.clipboard.writeText(inviteLink);
     setCopiedEmail('link');
     setTimeout(() => setCopiedEmail(null), 2000);
@@ -184,7 +221,7 @@ const InviteFamilyPage = () => {
 
       <div className="pt-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
+          {/* Header with simple owner gate hint */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center space-x-2 bg-blue-100 rounded-full px-6 py-3 mb-6">
               <Users className="w-5 h-5 text-blue-600" />
@@ -194,7 +231,7 @@ const InviteFamilyPage = () => {
               Invite Family Members
             </h1>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Share access to Sarah's digital soul with your family. They can chat, share memories, and connect with her.
+              Share access to your digital soul with your family. They can chat, share memories, and connect.
             </p>
             {userInfo?.isDemo && (
               <div className="mt-4 p-3 bg-blue-50 rounded-lg">
@@ -207,8 +244,31 @@ const InviteFamilyPage = () => {
 
           {/* Quick Actions */}
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Actions</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">Quick Actions</h2>
+              <button
+                onClick={() => setShowInvites(!showInvites)}
+                className="text-sm text-gray-600 hover:text-gray-800"
+              >
+                {showInvites ? 'Hide' : 'Show'} Pending Invites
+              </button>
+            </div>
             <div className="grid md:grid-cols-3 gap-4">
+              <div className="md:col-span-3 grid md:grid-cols-3 gap-4 mb-2">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Persona</label>
+                  <select
+                    value={selectedPersonaId}
+                    onChange={(e) => setSelectedPersonaId(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    <option value="">Auto-select latest</option>
+                    {personas.map(p => (
+                      <option key={p.id} value={p.id}>{p.subjectFullName}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <button
                 onClick={() => setShowInviteForm(true)}
                 className="flex items-center space-x-3 p-4 border-2 border-dashed border-purple-300 rounded-xl hover:border-purple-400 hover:bg-purple-50 transition-colors"
@@ -232,11 +292,21 @@ const InviteFamilyPage = () => {
               </button>
               
               <button
-                onClick={() => navigate('/contributor?name=Sarah&invitation=demo123')}
+                onClick={() => {
+                  const latest = invites.slice(-1)[0];
+                  if (!latest) {
+                    alert('No invites yet. Please create an invite first.');
+                    return;
+                  }
+                  const persona = personas.find(p => p.id === latest.personaId);
+                  const params = new URLSearchParams({ invitation: latest.token, role: String(latest.role), personaId: latest.personaId });
+                  if (persona?.subjectFullName) params.set('name', persona.subjectFullName);
+                  navigate(`/contributor?${params.toString()}`);
+                }}
                 className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 flex items-center space-x-2"
               >
                 <User className="w-5 h-5" />
-                <span>Demo Contributor Link</span>
+                <span>Open Latest Invite</span>
               </button>
               
               <div className="flex items-center space-x-3 p-4 bg-green-50 border-2 border-green-200 rounded-xl">
@@ -248,6 +318,39 @@ const InviteFamilyPage = () => {
               </div>
             </div>
           </div>
+
+          {/* Pending invites */}
+          {showInvites && invites.filter(i => i.status === 'PENDING').length > 0 && (
+            <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">Pending Invites</h2>
+              <div className="space-y-3">
+                {invites.filter(i => i.status === 'PENDING').map(i => (
+                  <div key={i.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div>
+                      <div className="font-medium text-gray-900">{i.name} ({i.email})</div>
+                      <div className="text-xs text-gray-600">Role: {i.role.toLowerCase()} • Token: {i.token}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="px-3 py-1 text-sm bg-gray-100 rounded-lg"
+                        onClick={() => {
+                          const link = `${window.location.origin}/contributor?invitation=${i.token}`;
+                          navigator.clipboard.writeText(link);
+                          setCopiedEmail('link');
+                          setTimeout(() => setCopiedEmail(null), 1500);
+                        }}
+                      >Copy Link</button>
+                      <button className="px-3 py-1 text-sm text-red-700 bg-red-50 rounded-lg" onClick={() => {
+                        const updated = invites.map(x => x.id === i.id ? { ...x, status: 'REVOKED' } : x);
+                        localStorage.setItem('ds_persona_invites', JSON.stringify(updated));
+                        window.location.reload();
+                      }}>Revoke</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Family Members List */}
           <div className="bg-white rounded-2xl shadow-lg p-6">
@@ -341,7 +444,7 @@ const InviteFamilyPage = () => {
         </div>
       </div>
 
-      {/* Invite Modal */}
+          {/* Invite Modal */}
       {showInviteForm && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="min-h-screen flex items-center justify-center p-4">
@@ -412,6 +515,40 @@ const InviteFamilyPage = () => {
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Role *
+                  </label>
+                  <select
+                    name="role"
+                    required
+                    value={inviteForm.role}
+                    onChange={(e) => setInviteForm(prev => ({ ...prev, role: e.target.value as PersonaRole }))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    <option value="VIEWER">Viewer</option>
+                    <option value="CONTRIBUTOR">Contributor</option>
+                    <option value="OWNER">Owner (Deceased/Legal Transfer)</option>
+                  </select>
+                </div>
+
+                {inviteForm.role === 'OWNER' && (
+                  <div className="col-span-1 md:col-span-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 mb-2"><strong>Important:</strong> Transferring ownership is intended for cases such as the owner's death or legal transfer of rights.</p>
+                    <label className="flex items-start space-x-3 text-sm text-yellow-900">
+                      <input
+                        type="checkbox"
+                        checked={inviteForm.confirmOwnerAuthority}
+                        onChange={(e) => setInviteForm(prev => ({ ...prev, confirmOwnerAuthority: e.target.checked }))}
+                        className="mt-1 text-yellow-700 border-yellow-400 focus:ring-yellow-600"
+                      />
+                      <span>
+                        I confirm I have the legal authority to transfer or assign ownership of this persona and understand all data and controls will be transferred upon acceptance.
+                      </span>
+                    </label>
+                  </div>
+                )}
+
                 <div className="flex space-x-3">
                   <button
                     type="button"
@@ -422,7 +559,7 @@ const InviteFamilyPage = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={isLoading}
+                    disabled={isLoading || (inviteForm.role === 'OWNER' && !inviteForm.confirmOwnerAuthority)}
                     className="flex-1 bg-purple-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {isLoading ? (
@@ -431,7 +568,7 @@ const InviteFamilyPage = () => {
                         <span>Sending...</span>
                       </div>
                     ) : (
-                      'Send Invitation'
+                      (inviteForm.role === 'OWNER' ? 'Transfer Ownership Invite' : 'Send Invitation')
                     )}
                   </button>
                 </div>

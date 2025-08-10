@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { MessageCircle, Calendar, Mic, Image as ImageIcon, Play, Pause } from 'lucide-react';
+import { MessageCircle, Calendar, Mic, Image as ImageIcon, Play, Pause, Heart, User, Bot, Paperclip, Send, Clock } from 'lucide-react';
 
 const InteractiveDemo = () => {
   const [activeTab, setActiveTab] = useState('chat');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [demoInput, setDemoInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
 
   const tabs = [
     { id: 'chat', label: 'Chat Interface', icon: <MessageCircle className="w-5 h-5" /> },
@@ -34,6 +36,25 @@ const InteractiveDemo = () => {
     "https://images.pexels.com/photos/1128319/pexels-photo-1128319.jpeg?auto=compress&cs=tinysrgb&w=400&h=400&fit=crop",
     "https://images.pexels.com/photos/2253842/pexels-photo-2253842.jpeg?auto=compress&cs=tinysrgb&w=400&h=400&fit=crop"
   ];
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const handleDemoSend = () => {
+    if (!demoInput.trim()) return;
+    chatMessages.push({ type: 'user', text: demoInput.trim() });
+    setDemoInput('');
+    setIsTyping(true);
+    setTimeout(() => {
+      setIsTyping(false);
+      chatMessages.push({
+        type: 'soul',
+        text:
+          "That's wonderful to hear! I love connecting with family and friends. Is there anything specific you'd like to talk about or any memories you'd like to share?",
+      });
+    }, 900);
+  };
 
   return (
     <section id="demo" className="py-20 bg-white">
@@ -72,34 +93,83 @@ const InteractiveDemo = () => {
           {/* Demo Content */}
           <div className="bg-white rounded-2xl shadow-lg min-h-[400px] overflow-hidden">
             {activeTab === 'chat' && (
-              <div className="p-6">
-                <div className="space-y-4 max-h-80 overflow-y-auto">
+              <div className="flex flex-col" style={{ minHeight: 420 }}>
+                {/* Header aligned with real chat */}
+                <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                      <Heart className="w-5 h-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900">Sarah Johnson</h3>
+                      <p className="text-xs text-gray-600">Digital Soul • Online</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                   {chatMessages.map((message, index) => (
-                    <div
-                      key={index}
-                      className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${
-                          message.type === 'user'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        <p className="text-sm leading-relaxed">{message.text}</p>
+                    <div key={index} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-start space-x-3 max-w-xs lg:max-w-md ${message.type === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${message.type === 'user' ? 'bg-purple-600' : 'bg-gray-200'}`}>
+                          {message.type === 'user' ? (
+                            <User className="w-4 h-4 text-white" />
+                          ) : (
+                            <Bot className="w-4 h-4 text-gray-600" />
+                          )}
+                        </div>
+                        <div className={`${message.type === 'user' ? 'bg-purple-600 text-white' : 'bg-white text-gray-900 border border-gray-200'} rounded-2xl px-4 py-2`}>
+                          <p className="text-sm">{message.text}</p>
+                          <div className={`flex items-center space-x-1 mt-1 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <Clock className="w-3 h-3 opacity-60" />
+                            <span className={`text-xs opacity-60 ${message.type === 'user' ? 'text-white' : 'text-gray-500'}`}>{formatTime(new Date())}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
+
+                  {isTyping && (
+                    <div className="flex justify-start">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-gray-600" />
+                        </div>
+                        <div className="bg-white border border-gray-200 rounded-2xl px-4 py-2">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-6 flex items-center space-x-3">
-                  <input
-                    type="text"
-                    placeholder="Ask about a memory..."
-                    className="flex-1 px-4 py-3 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                  <button className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-white hover:bg-purple-700 transition-colors">
-                    <MessageCircle className="w-5 h-5" />
-                  </button>
+
+                {/* Input aligned with real chat */}
+                <div className="bg-white border-t border-gray-200 px-6 py-4">
+                  <div className="flex items-center space-x-3">
+                    <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                      <Paperclip className="w-5 h-5" />
+                    </button>
+                    <div className="flex-1">
+                      <input
+                        value={demoInput}
+                        onChange={(e) => setDemoInput(e.target.value)}
+                        placeholder="Type your message..."
+                        className="w-full px-4 py-3 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      />
+                    </div>
+                    <button
+                      onClick={handleDemoSend}
+                      disabled={!demoInput.trim()}
+                      className="p-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

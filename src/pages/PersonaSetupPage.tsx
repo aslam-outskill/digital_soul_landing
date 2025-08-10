@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -14,6 +14,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { Persona } from '../types/persona';
+import { useAuthRole } from '../context/AuthRoleContext';
+import { createPersona as createPersonaLive, getCurrentUserId } from '../services/supabaseHelpers';
 
 interface PersonaData {
   basicInfo: {
@@ -36,8 +39,10 @@ interface PersonaData {
 
 const PersonaSetupPage = () => {
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0);
   const [userInfo, setUserInfo] = useState<any>(null);
+  const [creatorType, setCreatorType] = useState<'SELF' | 'OTHER' | null>(null);
+  const [consentType, setConsentType] = useState<'SELF_ATTESTED' | 'SUBJECT_ACCEPTED' | 'LEGAL_AUTH' | null>(null);
   const [personaData, setPersonaData] = useState<PersonaData>({
     basicInfo: {
       name: '',
@@ -58,20 +63,24 @@ const PersonaSetupPage = () => {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [basicInfoError, setBasicInfoError] = useState<string | null>(null);
+  const { addPersona, setMembership, currentUserEmail, isSupabaseAuth } = useAuthRole();
 
-  // Scroll to top when component mounts
+  // Scroll to top and detect auth mode
   useEffect(() => {
     window.scrollTo(0, 0);
-    
-    // Get user info from localStorage
+    if (isSupabaseAuth && currentUserEmail) {
+      setUserInfo({ email: currentUserEmail, isDemo: false });
+      return;
+    }
     const storedUserInfo = localStorage.getItem('userInfo');
     if (storedUserInfo) {
       setUserInfo(JSON.parse(storedUserInfo));
     } else {
-      // If no user info, redirect to home
       navigate('/');
     }
-  }, [navigate]);
+  }, [navigate, isSupabaseAuth, currentUserEmail]);
 
   // Add demo data for demo user
   useEffect(() => {
@@ -215,28 +224,73 @@ const PersonaSetupPage = () => {
   };
 
   const handleNext = () => {
-    if (currentStep < 4) {
-      setCurrentStep(currentStep + 1);
+    if (currentStep === 1) {
+      const name = (personaData.basicInfo.name || '').trim();
+      if (!name) {
+        setBasicInfoError('Full Name is required');
+        return;
+      }
+      setBasicInfoError(null);
     }
+    if (currentStep < 4) setCurrentStep(currentStep + 1);
   };
 
   const handlePrevious = () => {
-    if (currentStep > 1) {
+    if (currentStep > 0) {
       setCurrentStep(currentStep - 1);
     }
   };
 
   const handleSubmit = async () => {
+    // Client-side required validation
+    const name = (personaData.basicInfo.name || '').trim();
+    if (!name) {
+      setBasicInfoError('Full Name is required');
+      setCurrentStep(1);
+      return;
+    }
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    setErrorMsg(null);
+    try {
+      if (isSupabaseAuth) {
+        const userId = await getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+        const privacyMap: Record<string, 'PRIVATE' | 'LINK' | 'PUBLIC'> = {
+          private: 'PRIVATE',
+          family: 'PRIVATE',
+          friends: 'PRIVATE',
+        };
+        const created = await createPersonaLive({
+          created_by: userId,
+          creator_type: (creatorType as any) || 'OTHER',
+          name,
+          privacy: privacyMap[personaData.preferences.privacyLevel] || 'PRIVATE',
+        } as any);
+        if (!created?.id) throw new Error('Persona was not created');
+        navigate('/dashboard');
+      } else {
+        const email = userInfo?.email;
+        const persona: Persona = {
+          id: `p_${Date.now()}`,
+          subjectFullName: name,
+          createdByUserEmail: email,
+          creatorType: (creatorType as any) || 'OTHER',
+          privacy: (personaData.preferences.privacyLevel?.toUpperCase() as any) || 'FAMILY',
+          createdAt: new Date().toISOString(),
+        };
+        addPersona(persona);
+        if (email) setMembership(persona.id, email, 'OWNER');
+        navigate('/dashboard');
+      }
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Failed to create persona');
+    } finally {
       setIsLoading(false);
-      // Navigate to dashboard or persona preview
-      navigate('/dashboard');
-    }, 2000);
+    }
   };
 
   const steps = [
+    { id: 0, title: 'Who is this for?', icon: <User className="w-5 h-5" /> },
     { id: 1, title: 'Basic Information', icon: <User className="w-5 h-5" /> },
     { id: 2, title: 'Memories & Stories', icon: <Heart className="w-5 h-5" /> },
     { id: 3, title: 'Communication Style', icon: <MessageCircle className="w-5 h-5" /> },
@@ -322,6 +376,58 @@ const PersonaSetupPage = () => {
 
           {/* Step Content */}
           <div className="bg-white rounded-2xl shadow-lg p-8">
+            {currentStep === 0 && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Who is this persona for?</h2>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => { setCreatorType('SELF'); setConsentType('SELF_ATTESTED'); setCurrentStep(1); }}
+                    className={`p-6 rounded-xl border-2 text-left transition-colors ${
+                      creatorType === 'SELF' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
+                    }`}
+                  >
+                    <div className="font-semibold text-gray-900 mb-1">For myself</div>
+                    <div className="text-gray-600 text-sm">Create and own your personal digital soul</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreatorType('OTHER')}
+                    className={`p-6 rounded-xl border-2 text-left transition-colors ${
+                      creatorType === 'OTHER' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
+                    }`}
+                  >
+                    <div className="font-semibold text-gray-900 mb-1">For someone else</div>
+                    <div className="text-gray-600 text-sm">Create a persona for a family member or loved one</div>
+                  </button>
+                </div>
+
+                {creatorType === 'OTHER' && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-700 font-medium">Consent</p>
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {[
+                        { v: 'SUBJECT_ACCEPTED', l: 'Subject will accept invite' },
+                        { v: 'LEGAL_AUTH', l: 'I have legal authorization' },
+                        { v: 'SELF_ATTESTED', l: 'I attest responsibly' },
+                      ].map(opt => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => { setConsentType(opt.v as any); setCurrentStep(1); }}
+                          className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                            consentType === (opt.v as any) ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'
+                          }`}
+                        >
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">We’ll record this choice and allow uploading a consent document later.</p>
+                  </div>
+                )}
+              </div>
+            )}
             {currentStep === 1 && (
               <div className="space-y-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Basic Information</h2>
@@ -329,15 +435,22 @@ const PersonaSetupPage = () => {
                 <div className="grid md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Full Name *
+                      Full Name <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
                       value={personaData.basicInfo.name}
                       onChange={(e) => handleBasicInfoChange('name', e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      required
+                      aria-invalid={!!basicInfoError}
+                      className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-transparent ${
+                        basicInfoError ? 'border-red-500 focus:ring-red-500' : 'border-gray-300 focus:ring-purple-500'
+                      }`}
                       placeholder="Enter their full name"
                     />
+                    {basicInfoError && (
+                      <p className="mt-1 text-sm text-red-600">{basicInfoError}</p>
+                    )}
                   </div>
                   
                   <div>
@@ -573,6 +686,9 @@ const PersonaSetupPage = () => {
 
             {currentStep === 4 && (
               <div className="space-y-6">
+                {errorMsg && (
+                  <div className="p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{errorMsg}</div>
+                )}
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Review & Create</h2>
                 
                 <div className="bg-purple-50 rounded-lg p-6 mb-6">

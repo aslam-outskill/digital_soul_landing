@@ -4,11 +4,9 @@ import {
   ArrowLeft, 
   Settings, 
   Shield, 
-  MessageCircle, 
   Heart, 
   User,
   Bell,
-  Lock,
   Eye,
   EyeOff,
   Save,
@@ -16,11 +14,16 @@ import {
   AlertTriangle,
   Download,
   Trash2,
-  Palette,
   Volume2,
-  VolumeX
+  Mic,
+  Upload,
+  Video as VideoIcon,
+  Loader2,
+  Play
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { useAuthRole } from '../context/AuthRoleContext';
+import { getCurrentUserId, listMyMemberships, listMyPersonas } from '../services/supabaseHelpers';
 
 interface SettingsData {
   persona: {
@@ -30,6 +33,14 @@ interface SettingsData {
     autoRespond: boolean;
     voiceEnabled: boolean;
     theme: string;
+  };
+  media: {
+    voiceStatus: 'not_started' | 'processing' | 'ready';
+    avatarStatus: 'not_started' | 'processing' | 'ready';
+    voiceSamples: File[];
+    avatarReferences: File[];
+    voiceMode: 'upload' | 'read_script';
+    scriptRecordings: { blob: Blob; url: string; duration: number }[];
   };
   notifications: {
     newMessages: boolean;
@@ -53,18 +64,31 @@ interface SettingsData {
 
 const SettingsPage = () => {
   const navigate = useNavigate();
+  const { currentUserEmail, isSupabaseAuth, personas, memberships } = useAuthRole();
   const [userInfo, setUserInfo] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('persona');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = React.useRef<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [activePromptIndex, setActivePromptIndex] = useState<number | null>(null);
   const [settings, setSettings] = useState<SettingsData>({
     persona: {
-      name: 'Sarah Johnson',
+      name: '',
       communicationStyle: 'Warm and encouraging',
       privacyLevel: 'family',
       autoRespond: true,
       voiceEnabled: true,
       theme: 'purple'
+    },
+    media: {
+      voiceStatus: 'not_started',
+      avatarStatus: 'not_started',
+      voiceSamples: [],
+      avatarReferences: [],
+      voiceMode: 'upload',
+      scriptRecordings: [],
     },
     notifications: {
       newMessages: true,
@@ -79,25 +103,82 @@ const SettingsPage = () => {
       thirdPartyAccess: false
     },
     account: {
-      email: 'demo@digitalsoul.com',
+      email: 'demo@digitalsoulapp.ch',
       password: '••••••••',
       twoFactorAuth: false,
       sessionTimeout: 30
     }
   });
 
-  // Scroll to top when component mounts
+  // Scroll to top and enforce auth using global auth context
   useEffect(() => {
     window.scrollTo(0, 0);
-    
-    // Get user info from localStorage
-    const storedUserInfo = localStorage.getItem('userInfo');
-    if (storedUserInfo) {
-      setUserInfo(JSON.parse(storedUserInfo));
+    if (currentUserEmail) {
+      let isDemo = false;
+      if (!isSupabaseAuth) {
+        try { isDemo = JSON.parse(localStorage.getItem('userInfo') || 'null')?.isDemo ?? false; } catch {}
+      }
+      setUserInfo({ email: currentUserEmail, isDemo });
+      setSettings(prev => ({ ...prev, account: { ...prev.account, email: currentUserEmail } }));
     } else {
       navigate('/');
     }
-  }, [navigate]);
+  }, [navigate, currentUserEmail, isSupabaseAuth]);
+
+  // Load current persona details
+  useEffect(() => {
+    const mapPrivacy = (p: string | null | undefined) => {
+      if (!p) return 'family';
+      const up = p.toString().toUpperCase();
+      if (up === 'PRIVATE') return 'private';
+      if (up === 'PUBLIC') return 'friends';
+      if (up === 'LINK') return 'family';
+      return 'family';
+    };
+    (async () => {
+      if (!currentUserEmail) return;
+      if (isSupabaseAuth) {
+        try {
+          const [uid, liveP, liveM] = await Promise.all([
+            getCurrentUserId(),
+            listMyPersonas(),
+            listMyMemberships(),
+          ]);
+          if (!uid) return;
+          const owned = liveP.find(p => p.created_by === uid);
+          const firstMember = liveM[0]?.persona_id;
+          const target = owned || liveP.find(p => p.id === firstMember) || liveP[0];
+          if (target) {
+            setSettings(prev => ({
+              ...prev,
+              persona: {
+                ...prev.persona,
+                name: target.name || '',
+                privacyLevel: mapPrivacy(target.privacy),
+              },
+            }));
+          }
+        } catch {
+          // ignore
+        }
+      } else {
+        const myIds = memberships
+          .filter(m => m.userEmail === currentUserEmail)
+          .map(m => m.personaId);
+        const target = personas.find(p => myIds.includes(p.id)) || personas[0];
+        if (target) {
+          setSettings(prev => ({
+            ...prev,
+            persona: {
+              ...prev.persona,
+              name: (target as any).subjectFullName || '',
+              privacyLevel: (target as any).privacy?.toLowerCase?.() || 'family',
+            },
+          }));
+        }
+      }
+    })();
+  }, [isSupabaseAuth, currentUserEmail, personas, memberships]);
 
   const handleSettingChange = (category: keyof SettingsData, field: string, value: any) => {
     setSettings(prev => ({
@@ -117,6 +198,70 @@ const SettingsPage = () => {
       // Show success message
       alert('Settings saved successfully!');
     }, 1500);
+  };
+
+  const voicePrompts: string[] = [
+    'Please read this paragraph clearly and at a natural pace. Focus on enunciation and tone so we can capture a representative sample of your voice.',
+    'Now read a different phrase with some variation in pacing and emotion. Imagine telling a friend about a meaningful memory.',
+    'Finally, read this sentence with a warm and friendly tone. Try to keep your voice steady and comfortable.'
+  ];
+
+  const cleanupMedia = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      try { mediaRecorderRef.current.stop(); } catch {}
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(t => t.stop());
+      mediaStreamRef.current = null;
+    }
+    setIsRecording(false);
+    setActivePromptIndex(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanupMedia();
+      // Revoke any blob URLs
+      settings.media.scriptRecordings.forEach(r => r.url && URL.revokeObjectURL(r.url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startRecording = async (index: number) => {
+    try {
+      // Stop any existing
+      cleanupMedia();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const chunks: BlobPart[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const MediaRecorderCtor: any = (window as any).MediaRecorder;
+      const recorder: MediaRecorder = new MediaRecorderCtor(stream);
+      mediaRecorderRef.current = recorder;
+      setActivePromptIndex(index);
+      setIsRecording(true);
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        const next = [...(settings.media.scriptRecordings || [])];
+        next[index] = { blob, url, duration: 0 } as any;
+        handleSettingChange('media', 'scriptRecordings', next);
+        cleanupMedia();
+      };
+      recorder.start();
+    } catch (err) {
+      alert('Microphone access denied or unavailable. Please allow mic permissions and try again.');
+      cleanupMedia();
+    }
+  };
+
+  const stopRecording = () => {
+    try {
+      mediaRecorderRef.current?.stop();
+    } catch {}
   };
 
   const handleExportData = () => {
@@ -145,6 +290,7 @@ const SettingsPage = () => {
 
   const tabs = [
     { id: 'persona', label: 'Persona Settings', icon: <Heart className="w-4 h-4" /> },
+    { id: 'voice', label: 'Voice & Avatar', icon: <Mic className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
     { id: 'privacy', label: 'Privacy & Security', icon: <Shield className="w-4 h-4" /> },
     { id: 'account', label: 'Account', icon: <User className="w-4 h-4" /> }
@@ -290,7 +436,7 @@ const SettingsPage = () => {
                         <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
                           <div>
                             <div className="font-medium text-gray-900">Auto-respond to messages</div>
-                            <div className="text-sm text-gray-600">Allow Sarah to respond automatically when you're away</div>
+                            <div className="text-sm text-gray-600">Allow this persona to respond automatically when you're away</div>
                           </div>
                           <input
                             type="checkbox"
@@ -303,7 +449,7 @@ const SettingsPage = () => {
                         <label className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
                           <div>
                             <div className="font-medium text-gray-900">Voice responses</div>
-                            <div className="text-sm text-gray-600">Enable Sarah to speak her responses</div>
+                            <div className="text-sm text-gray-600">Enable spoken responses for this persona</div>
                           </div>
                           <input
                             type="checkbox"
@@ -377,6 +523,259 @@ const SettingsPage = () => {
                           className="text-purple-600 focus:ring-purple-500"
                         />
                       </label>
+                    </div>
+                  </div>
+                )}
+
+                {/* Voice & Avatar */
+                }
+                {activeTab === 'voice' && (
+                  <div className="space-y-10">
+                    {/* Voice Cloning */}
+                    <div>
+                      <div className="flex items-center space-x-3 mb-6">
+                        <Mic className="w-6 h-6 text-purple-600" />
+                        <h2 className="text-2xl font-bold text-gray-900">Voice Cloning</h2>
+                      </div>
+
+                      {/* Mode selector */}
+                      <div className="mb-6 inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                        <button
+                          onClick={() => handleSettingChange('media', 'voiceMode', 'upload')}
+                          className={`px-4 py-2 text-sm ${settings.media.voiceMode === 'upload' ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                        >
+                          Upload Samples
+                        </button>
+                        <button
+                          onClick={() => handleSettingChange('media', 'voiceMode', 'read_script')}
+                          className={`px-4 py-2 text-sm ${settings.media.voiceMode === 'read_script' ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                        >
+                          Read Script
+                        </button>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          {settings.media.voiceMode === 'upload' && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Upload Voice Samples (30–60 seconds total)
+                              </label>
+                              <div className="space-y-3">
+                                {settings.media.voiceSamples.map((file, index) => (
+                                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                    <div className="flex items-center space-x-3">
+                                      <Volume2 className="w-5 h-5 text-gray-400" />
+                                      <span className="text-sm text-gray-700 truncate max-w-[220px]">{file.name}</span>
+                                    </div>
+                                    <button
+                                      className="text-red-600 hover:text-red-700 text-sm"
+                                      onClick={() => {
+                                        const next = settings.media.voiceSamples.filter((_, i) => i !== index);
+                                        handleSettingChange('media', 'voiceSamples', next);
+                                      }}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+
+                                <label className="block p-4 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-purple-400 hover:text-purple-600 transition-colors">
+                                  <Upload className="w-6 h-6 mx-auto mb-2" />
+                                  <span>Add audio files</span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept="audio/*"
+                                    onChange={(e) => {
+                                      const files = Array.from(e.target.files || []);
+                                      handleSettingChange('media', 'voiceSamples', [...settings.media.voiceSamples, ...files]);
+                                    }}
+                                    className="hidden"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {settings.media.voiceMode === 'read_script' && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Read the following prompts</label>
+                              <div className="space-y-3">
+                                {voicePrompts.map((text, i) => {
+                                  const rec = settings.media.scriptRecordings[i];
+                                  return (
+                                    <div key={i} className="p-4 border border-gray-200 rounded-lg">
+                                      <p className="text-sm text-gray-700 mb-3">{text}</p>
+                                      <div className="flex items-center space-x-2">
+                                        {activePromptIndex === i && isRecording ? (
+                                          <button
+                                            onClick={stopRecording}
+                                            className="px-3 py-2 bg-red-600 text-white rounded-lg"
+                                          >
+                                            Stop
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => startRecording(i)}
+                                            className="px-3 py-2 bg-purple-600 text-white rounded-lg"
+                                          >
+                                            {rec ? 'Retake' : 'Record'}
+                                          </button>
+                                        )}
+
+                                        {rec && (
+                                          <audio controls src={rec.url} className="ml-2" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 mb-3">Status</p>
+                          {settings.media.voiceStatus === 'not_started' && (
+                            <div className="space-y-4">
+                              <p className="text-gray-700">No voice profile yet. {settings.media.voiceMode === 'upload' ? 'Upload a few samples' : 'Record the prompts'} and start cloning.</p>
+                              <button
+                                disabled={settings.media.voiceMode === 'upload' ? settings.media.voiceSamples.length === 0 : (settings.media.scriptRecordings.filter(Boolean).length === 0)}
+                                onClick={() => {
+                                  handleSettingChange('media', 'voiceStatus', 'processing');
+                                  setTimeout(() => handleSettingChange('media', 'voiceStatus', 'ready'), 2000);
+                                }}
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
+                              >
+                                Start Voice Cloning
+                              </button>
+                            </div>
+                          )}
+                          {settings.media.voiceStatus === 'processing' && (
+                            <div className="flex items-center space-x-3 text-purple-700">
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>Processing samples… This may take a minute.</span>
+                            </div>
+                          )}
+                          {settings.media.voiceStatus === 'ready' && (
+                            <div className="space-y-4">
+                              <div className="flex items-center space-x-2 text-green-700">
+                                <Check className="w-5 h-5" />
+                                <span>Voice profile is ready.</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button className="px-3 py-2 bg-gray-100 rounded-lg flex items-center space-x-2">
+                                  <Play className="w-4 h-4" />
+                                  <span>Preview</span>
+                                </button>
+                                <button
+                                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
+                                  onClick={() => handleSettingChange('media', 'voiceStatus', 'not_started')}
+                                >
+                                  Re-clone Voice
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Video Avatar */}
+                    <div>
+                      <div className="flex items-center space-x-3 mb-6">
+                        <VideoIcon className="w-6 h-6 text-purple-600" />
+                        <h2 className="text-2xl font-bold text-gray-900">Video Avatar</h2>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Upload Reference Video or Photos
+                          </label>
+                          <div className="space-y-3">
+                            {settings.media.avatarReferences.map((file, index) => (
+                              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                <div className="flex items-center space-x-3">
+                                  <VideoIcon className="w-5 h-5 text-gray-400" />
+                                  <span className="text-sm text-gray-700 truncate max-w-[220px]">{file.name}</span>
+                                </div>
+                                <button
+                                  className="text-red-600 hover:text-red-700 text-sm"
+                                  onClick={() => {
+                                    const next = settings.media.avatarReferences.filter((_, i) => i !== index);
+                                    handleSettingChange('media', 'avatarReferences', next);
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+
+                            <label className="block p-4 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-purple-400 hover:text-purple-600 transition-colors">
+                              <Upload className="w-6 h-6 mx-auto mb-2" />
+                              <span>Add video or images</span>
+                              <input
+                                type="file"
+                                multiple
+                                accept="video/*,image/*"
+                                onChange={(e) => {
+                                  const files = Array.from(e.target.files || []);
+                                  handleSettingChange('media', 'avatarReferences', [...settings.media.avatarReferences, ...files]);
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 p-4">
+                          <p className="text-sm text-gray-600 mb-3">Status</p>
+                          {settings.media.avatarStatus === 'not_started' && (
+                            <div className="space-y-4">
+                              <p className="text-gray-700">No video avatar yet. Upload at least one file and generate.</p>
+                              <button
+                                disabled={settings.media.avatarReferences.length === 0}
+                                onClick={() => {
+                                  handleSettingChange('media', 'avatarStatus', 'processing');
+                                  setTimeout(() => handleSettingChange('media', 'avatarStatus', 'ready'), 2500);
+                                }}
+                                className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
+                              >
+                                Generate Video Avatar
+                              </button>
+                            </div>
+                          )}
+                          {settings.media.avatarStatus === 'processing' && (
+                            <div className="flex items-center space-x-3 text-purple-700">
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>Generating avatar… This may take a few minutes.</span>
+                            </div>
+                          )}
+                          {settings.media.avatarStatus === 'ready' && (
+                            <div className="space-y-4">
+                              <div className="flex items-center space-x-2 text-green-700">
+                                <Check className="w-5 h-5" />
+                                <span>Video avatar is ready.</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button className="px-3 py-2 bg-gray-100 rounded-lg flex items-center space-x-2">
+                                  <Play className="w-4 h-4" />
+                                  <span>Preview</span>
+                                </button>
+                                <button
+                                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
+                                  onClick={() => handleSettingChange('media', 'avatarStatus', 'not_started')}
+                                >
+                                  Re-generate
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
