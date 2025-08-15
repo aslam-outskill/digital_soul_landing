@@ -461,6 +461,25 @@ const ContributorPage = () => {
     );
   }
 
+  // For VIEWER invites, skip the contribution UI entirely and redirect to chat immediately
+  if (isViewerInvite) {
+    return (
+      <div className="min-h-screen bg-white">
+        <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <Logo />
+              <button onClick={() => navigate(`/chat?personaId=${encodeURIComponent(personaIdParam)}&name=${encodeURIComponent(personaName)}`)} className="px-4 py-2 bg-purple-600 text-white rounded-lg">Open Chat</button>
+            </div>
+          </div>
+        </nav>
+        <div className="pt-24 text-center p-6">
+          <p className="text-gray-700">This invite grants viewer access only. Redirecting you to chat…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 overflow-y-auto"

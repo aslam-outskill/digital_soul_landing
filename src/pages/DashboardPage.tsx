@@ -235,7 +235,7 @@ const DashboardPage = () => {
                     <Users className="w-4 h-4" />
                     <span>Invite</span>
                   </button>
-                  <button onClick={() => navigate('/settings')} className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700">
+                  <button onClick={() => navigate(`/settings?personaId=${encodeURIComponent(p.id)}&name=${encodeURIComponent(isSupabaseAuth ? (p.name || 'Persona') : p.subjectFullName)}`)} className="flex items-center justify-center space-x-2 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700">
                     <Settings className="w-4 h-4" />
                     <span>Settings</span>
                   </button>
