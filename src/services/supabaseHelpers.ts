@@ -324,4 +324,27 @@ export async function deletePersonaAndMemberships(personaId: string) {
   if (error) throw new Error(error.message)
 }
 
+export async function validateInvitationToken(token: string) {
+  if (!supabase) throw new Error('Supabase not configured')
+  
+  const { data: invites, error } = await supabase
+    .from('persona_invites')
+    .select('*')
+    .eq('token', token)
+    .limit(1)
+  
+  if (error) throw new Error(error.message)
+  
+  const invite = invites?.[0]
+  if (!invite) return null
+  
+  // Check if invite is still valid
+  if (invite.status !== 'PENDING') return null
+  
+  // Check if invite has expired
+  if (invite.expires_at && new Date(invite.expires_at) < new Date()) return null
+  
+  return invite
+}
+
 

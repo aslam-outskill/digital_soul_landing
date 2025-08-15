@@ -245,12 +245,21 @@ const InviteFamilyPage = () => {
       setSubmitError(null);
       if (isSupabaseAuth) {
         try {
+          const userId = await getCurrentUserId();
+          if (!userId) {
+            setSubmitError('You must be logged in to create invites');
+            return;
+          }
+          
           await createInviteLive({
             persona_id: personaId as any,
             email: inviteForm.email as any,
             role: inviteForm.role as any,
             token: token as any,
-            status: 'PENDING' as any
+            status: 'PENDING' as any,
+            created_by: userId as any,
+            name: inviteForm.name || null,
+            relationship: inviteForm.relationship || null
           } as any);
         } catch (e: any) {
           setSubmitError(e?.message || 'Failed to create invite');
@@ -307,24 +316,54 @@ const InviteFamilyPage = () => {
       navigate('/dashboard');
       return;
     }
-    // Find most recent pending invite for this persona
-    const latestForPersona = invites
-      .filter(i => i.personaId === chosenPersonaId && i.status === 'PENDING')
-      .sort((a, b) => new Date(a.invitedAt).getTime() - new Date(b.invitedAt).getTime())
-      .slice(-1)[0];
-    if (!latestForPersona) {
-      alert('Please create an invite for this persona first.');
-      return;
+    
+    if (isSupabaseAuth) {
+      // Use live Supabase data
+      const latestForPersona = liveInvites
+        .filter((i: any) => i.persona_id === chosenPersonaId && i.status === 'PENDING')
+        .sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        .slice(-1)[0];
+      
+      if (!latestForPersona) {
+        alert('Please create an invite for this persona first.');
+        return;
+      }
+      
+      const persona = personas.find(p => p.id === chosenPersonaId);
+      const params = new URLSearchParams({ 
+        invitation: latestForPersona.token, 
+        role: String(latestForPersona.role), 
+        personaId: chosenPersonaId 
+      });
+      const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
+      if (resolvedName) params.set('name', resolvedName);
+      const basePath = String(latestForPersona.role).toUpperCase() === 'VIEWER' ? '/chat' : '/contributor';
+      const inviteLink = `${window.location.origin}${basePath}?${params.toString()}`;
+      navigator.clipboard.writeText(inviteLink);
+      setCopiedEmail('link');
+      setTimeout(() => setCopiedEmail(null), 2000);
+    } else {
+      // Fallback to demo/localStorage data
+      const latestForPersona = invites
+        .filter(i => i.personaId === chosenPersonaId && i.status === 'PENDING')
+        .sort((a, b) => new Date(a.invitedAt).getTime() - new Date(b.invitedAt).getTime())
+        .slice(-1)[0];
+      
+      if (!latestForPersona) {
+        alert('Please create an invite for this persona first.');
+        return;
+      }
+      
+      const persona = personas.find(p => p.id === chosenPersonaId);
+      const params = new URLSearchParams({ invitation: latestForPersona.token, role: String(latestForPersona.role), personaId: chosenPersonaId });
+      const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
+      if (resolvedName) params.set('name', resolvedName);
+      const basePath = String(latestForPersona.role).toUpperCase() === 'VIEWER' ? '/chat' : '/contributor';
+      const inviteLink = `${window.location.origin}${basePath}?${params.toString()}`;
+      navigator.clipboard.writeText(inviteLink);
+      setCopiedEmail('link');
+      setTimeout(() => setCopiedEmail(null), 2000);
     }
-    const persona = personas.find(p => p.id === chosenPersonaId);
-    const params = new URLSearchParams({ invitation: latestForPersona.token, role: String(latestForPersona.role), personaId: chosenPersonaId });
-    const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
-    if (resolvedName) params.set('name', resolvedName);
-    const basePath = String(latestForPersona.role).toUpperCase() === 'VIEWER' ? '/chat' : '/contributor';
-    const inviteLink = `${window.location.origin}${basePath}?${params.toString()}`;
-    navigator.clipboard.writeText(inviteLink);
-    setCopiedEmail('link');
-    setTimeout(() => setCopiedEmail(null), 2000);
   };
 
   const getStatusColor = (status: string) => {

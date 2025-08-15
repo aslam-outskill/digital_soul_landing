@@ -16,7 +16,7 @@ import {
 import Logo from '../components/Logo';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { supabase } from '../utils/supabaseClient';
-import { getPersonaById, logPersonaContribution, submitPersonaContribution, acceptInviteAndCreateMembership, uploadPersonaMedia } from '../services/supabaseHelpers';
+import { getPersonaById, logPersonaContribution, submitPersonaContribution, acceptInviteAndCreateMembership, uploadPersonaMedia, validateInvitationToken } from '../services/supabaseHelpers';
 import { readInvites, writeInvites } from '../utils/localStore';
 
 interface ContributionData {
@@ -154,38 +154,54 @@ const ContributorPage = () => {
   // Auth tracking removed to allow anonymous invite-based submissions
 
   useEffect(() => {
-    const roleParam = (searchParams.get('role') || '').toUpperCase();
-    const personaIdParam = searchParams.get('personaId') || '';
     if (!invitationToken) {
       setInviteStatus('INVALID');
       return;
     }
-    const list = readInvites();
-    const inv = list.find(i => i.token === invitationToken);
-    // If found but not pending -> invalid
-    if (inv && inv.status !== 'PENDING') {
-      setInviteStatus('INVALID');
-      return;
-    }
-    // If not found, but we have fallback params (dev): accept using URL params
-    const targetPersonaId = inv?.personaId || personaIdParam;
-    const targetRole = (inv?.role || roleParam || 'VIEWER') as any;
-    if (!inv && !targetPersonaId) {
-      setInviteStatus('INVALID');
-      return;
-    }
-    // Accept membership
-    setTimeout(() => {
-      if (!currentUserEmail || !targetPersonaId) return;
-      acceptInviteAndCreateMembership({ token: invitationToken }).catch(() => {});
-      setMembership(targetPersonaId, currentUserEmail, targetRole);
-      if (inv) {
-        const updated = list.map(x => x.id === inv.id ? { ...x, status: 'ACCEPTED', acceptedUserEmail: currentUserEmail } : x);
-        localStorage.setItem('ds_persona_invites', JSON.stringify(updated));
+    
+    console.log('Validating invitation token:', invitationToken);
+    
+    // Validate invitation token from Supabase
+    const validateInvite = async () => {
+      try {
+        const inv = await validateInvitationToken(invitationToken);
+        console.log('Invitation validation result:', inv);
+        
+        if (!inv) {
+          console.log('No invitation found for token');
+          setInviteStatus('INVALID');
+          return;
+        }
+        
+        // If found but not pending -> invalid
+        if (inv.status !== 'PENDING') {
+          console.log('Invitation status is not PENDING:', inv.status);
+          setInviteStatus('INVALID');
+          return;
+        }
+        
+        console.log('Invitation is valid, current user email:', currentUserEmail);
+        
+        // Accept membership if user is authenticated
+        if (currentUserEmail && inv.persona_id) {
+          setTimeout(() => {
+            acceptInviteAndCreateMembership({ token: invitationToken }).catch(() => {});
+            setMembership(inv.persona_id, currentUserEmail, inv.role as any);
+            setInviteStatus('ACCEPTED');
+          }, 400);
+        } else {
+          // For anonymous users, just mark as valid
+          console.log('User not authenticated or no persona_id, marking as PENDING');
+          setInviteStatus('PENDING');
+        }
+      } catch (error) {
+        console.error('Error validating invitation:', error);
+        setInviteStatus('INVALID');
       }
-      setInviteStatus('ACCEPTED');
-    }, 400);
-  }, [invitationToken, currentUserEmail, setMembership, searchParams]);
+    };
+    
+    validateInvite();
+  }, [invitationToken, currentUserEmail, setMembership]);
 
   // For VIEWER invites, redirect to chat after acceptance (or if already invalid/used)
   useEffect(() => {
