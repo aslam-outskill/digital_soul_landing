@@ -16,7 +16,7 @@ import {
 import Logo from '../components/Logo';
 import { Persona } from '../types/persona';
 import { useAuthRole } from '../context/AuthRoleContext';
-import { createPersona as createPersonaLive, getCurrentUserId } from '../services/supabaseHelpers';
+import { createPersona as createPersonaLive, getCurrentUserId, addPersonaMemories } from '../services/supabaseHelpers';
 
 interface PersonaData {
   basicInfo: {
@@ -275,6 +275,11 @@ const PersonaSetupPage = () => {
           privacy: privacyMap[personaData.preferences.privacyLevel] || 'PRIVATE',
         } as any);
         if (!created?.id) throw new Error('Persona was not created');
+        // Persist stories/memories provided during setup
+        const setupStories = (personaData.memories.stories || []).map(s => (s || '').trim()).filter(Boolean)
+        if (setupStories.length > 0) {
+          try { await addPersonaMemories({ personaId: created.id, stories: setupStories, source: 'SETUP' }); } catch {}
+        }
         navigate('/dashboard');
       } else {
         const email = userInfo?.email;

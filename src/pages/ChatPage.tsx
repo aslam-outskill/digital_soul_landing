@@ -14,8 +14,12 @@ import {
   VolumeX
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { speakText, speakTextPreview } from '../lib/api/voice';
+import { supabase } from '../utils/supabaseClient';
 import { useAuthRole } from '../context/AuthRoleContext';
-import { getCurrentUserId, listMyMemberships, listMyPersonas } from '../services/supabaseHelpers';
+import { getCurrentUserId, listMyMemberships, listMyPersonas, getMyRoleForPersona } from '../services/supabaseHelpers';
+import { useStreamedChat } from '../hooks/useStreamedChat';
+import type { ChatMessage } from '../lib/api/chat';
 
 interface Message {
   id: string;
@@ -37,6 +41,10 @@ const ChatPage = () => {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [personaName, setPersonaName] = useState<string>('');
   const [personaId, setPersonaId] = useState<string | null>(null);
+  const [availablePersonas, setAvailablePersonas] = useState<{ id: string; name: string | null }[]>([]);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<'OWNER'|'CONTRIBUTOR'|'VIEWER'|null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasWelcomedRef = useRef<boolean>(false);
   
@@ -97,11 +105,12 @@ const ChatPage = () => {
       // Allow guest chat via direct link (viewer access)
       setUserInfo({ email: null, isDemo: false });
     }
-    if (!hasWelcomedRef.current) {
+    // Welcome via streaming assistant once persona/auth are ready (no fake message)
+    if (!hasWelcomedRef.current && authToken && (personaId || userInfo)) {
       hasWelcomedRef.current = true;
       setTimeout(() => {
-        addBotMessage("Hello! It's wonderful to connect with you. How are you doing today? You can speak to me by clicking the microphone button.");
-      }, 500);
+        streamAssistantWelcome();
+      }, 400);
     }
   }, [navigate, currentUserEmail, isSupabaseAuth]);
 
@@ -110,9 +119,26 @@ const ChatPage = () => {
     const params = new URLSearchParams(window.location.search);
     const pid = params.get('personaId');
     const nm = params.get('name');
+    const inv = params.get('invitation');
     if (pid) setPersonaId(pid);
     if (nm) setPersonaName(nm);
+    if (inv) setInviteToken(inv);
   }, []);
+
+  // Fetch Supabase auth token for server TTS
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase?.auth.getSession()!;
+      setAuthToken(data.session?.access_token ?? null);
+    })();
+  }, []);
+
+  // Resolve role for this persona to gate UI behavior (viewer can only chat)
+  useEffect(() => {
+    (async () => {
+      try { if (personaId) setMyRole(await getMyRoleForPersona(personaId)); } catch {}
+    })();
+  }, [personaId, currentUserEmail]);
 
   // Load persona name (live or demo) - prefer most recent when not specified
   useEffect(() => {
@@ -132,10 +158,17 @@ const ChatPage = () => {
           if (!uid) return;
           const memberIds = new Set(liveM.map(m => m.persona_id));
           const candidates = liveP.filter(p => p.created_by === uid || memberIds.has(p.id));
+          setAvailablePersonas(candidates.map(p => ({ id: p.id, name: p.name || null })));
           const target = (personaId ? candidates.find(p => p.id === personaId) : undefined) ||
                         (candidates.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]) ||
                         liveP[0];
-          if (target) setPersonaName(target.name || 'Chat');
+          if (target) {
+            setPersonaName(target.name || 'Chat');
+            setPersonaId(target.id);
+            const url = new URL(window.location.href);
+            url.searchParams.set('personaId', target.id);
+            window.history.replaceState({}, '', url.toString());
+          }
         } catch {
           setPersonaName('Chat');
         }
@@ -144,28 +177,29 @@ const ChatPage = () => {
           memberships.filter(m => m.userEmail === currentUserEmail).map(m => m.personaId)
         );
         const candidates = personas.filter(p => myIds.has(p.id));
+        setAvailablePersonas(candidates.map((p: any) => ({ id: p.id, name: p.subjectFullName || null })) as any);
         const target = (personaId ? candidates.find(p => p.id === personaId) : undefined) ||
                        (candidates.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]) ||
                        personas[0];
-        if (target) setPersonaName((target as any).subjectFullName || 'Chat');
+        if (target) {
+          setPersonaName((target as any).subjectFullName || 'Chat');
+          setPersonaId((target as any).id);
+          const url = new URL(window.location.href);
+          url.searchParams.set('personaId', (target as any).id);
+          window.history.replaceState({}, '', url.toString());
+        }
       }
     })();
   }, [isSupabaseAuth, currentUserEmail, userInfo, personas, memberships, personaId]);
 
-  const addBotMessage = (text: string) => {
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text,
-      sender: 'bot',
-      timestamp: new Date()
-    };
-    setMessages(prev => [...prev, newMessage]);
-    
-    // Speak the message if voice is enabled
-    if (voiceEnabled && synthesisRef.current) {
-      speakMessage(text);
-    }
-  };
+  const { assistantReply, isStreaming, start, setAssistantReply } = useStreamedChat(authToken, personaId);
+  const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
+
+  // (reserved) const addBotMessage = (text: string) => {
+  //   const newMessage: Message = { id: Date.now().toString(), text, sender: 'bot', timestamp: new Date() };
+  //   setMessages(prev => [...prev, newMessage]);
+  //   if (voiceEnabled && synthesisRef.current) speakMessage(text);
+  // };
 
   const addUserMessage = (text: string) => {
     const newMessage: Message = {
@@ -177,39 +211,39 @@ const ChatPage = () => {
     setMessages(prev => [...prev, newMessage]);
   };
 
-  const speakMessage = (text: string) => {
-    if (synthesisRef.current && voiceEnabled) {
-      setIsSpeaking(true);
-      
-      // Cancel any ongoing speech
-      synthesisRef.current.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      
-      // Try to find a female voice for Sarah
-      const voices = synthesisRef.current.getVoices();
-      const femaleVoice = voices.find((voice: any) => 
-        voice.name.includes('female') || 
-        voice.name.includes('Samantha') || 
-        voice.name.includes('Victoria')
-      );
-      
-      if (femaleVoice) {
-        utterance.voice = femaleVoice;
+  const speakMessage = async (text: string) => {
+    try {
+      if (!voiceEnabled) return;
+      // Prefer server TTS (clone or default) when signed in and persona is known
+      if (authToken && personaId) {
+        setIsSpeaking(true);
+        await speakText(authToken, personaId, text);
+        setIsSpeaking(false);
+        return;
       }
-      
-      utterance.rate = 0.9; // Slightly slower for more natural speech
-      utterance.pitch = 1.1; // Slightly higher pitch
-      utterance.volume = 0.8;
-      
-      utterance.onend = () => {
+      // Viewer public preview via invite token
+      if (!authToken && personaId && inviteToken) {
+        setIsSpeaking(true);
+        await speakTextPreview(inviteToken, personaId, text);
         setIsSpeaking(false);
-      };
-      
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-      };
-      
+        return;
+      }
+    } catch {
+      // fall through to browser TTS below
+      setIsSpeaking(false);
+    }
+    if (synthesisRef.current) {
+      setIsSpeaking(true);
+      synthesisRef.current.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = synthesisRef.current.getVoices();
+      const femaleVoice = voices.find((voice: any) => voice.name.includes('Samantha') || voice.name.includes('Victoria') || voice.name.toLowerCase().includes('female'));
+      if (femaleVoice) utterance.voice = femaleVoice;
+      utterance.rate = 0.95;
+      utterance.pitch = 1.05;
+      utterance.volume = 0.9;
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
       synthesisRef.current.speak(utterance);
     }
   };
@@ -233,44 +267,55 @@ const ChatPage = () => {
     }
   };
 
-  const simulateBotResponse = (userMessage: string) => {
+  const streamBotResponse = (userMessage: string) => {
     setIsTyping(true);
-    
-    // Simulate typing delay
-    setTimeout(() => {
-      setIsTyping(false);
-      
-      // Demo responses based on user input
-      const lowerMessage = userMessage.toLowerCase();
-      let response = "";
-      
-      if (lowerMessage.includes('how are you') || lowerMessage.includes('how do you feel')) {
-        response = "I'm doing wonderfully, thank you for asking! I'm so grateful to be able to connect with you. How about you?";
-      } else if (lowerMessage.includes('apple pie') || lowerMessage.includes('recipe')) {
-        response = "Oh, my apple pie! I used to make it with love for every family gathering. The secret was using Granny Smith apples and a pinch of cinnamon. Would you like me to share the recipe?";
-      } else if (lowerMessage.includes('story') || lowerMessage.includes('memory')) {
-        response = "I have so many wonderful memories! One of my favorites was when I was a young girl in the 1950s. We didn't have much, but we had each other. My mother taught me that love and family are the most precious things in life.";
-      } else if (lowerMessage.includes('advice') || lowerMessage.includes('wisdom')) {
-        response = "My dear, life is a beautiful journey. Always be kind to others, cherish your family, and never forget that every challenge makes you stronger. What's on your mind?";
-      } else if (lowerMessage.includes('family') || lowerMessage.includes('grandchildren')) {
-        response = "Family is everything to me. I used to call all my grandchildren every Sunday to check in. There's nothing more precious than hearing their voices and knowing they're safe and happy.";
-      } else if (lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
-        response = "Hello there! It's so lovely to hear from you. I'm here whenever you need someone to talk to or share memories with.";
-      } else if (lowerMessage.includes('voice') || lowerMessage.includes('speak')) {
-        response = "Yes, I can speak to you! I love using my voice to connect with family. It makes our conversations feel more personal and warm.";
-      } else {
-        response = "That's wonderful to hear! I love connecting with family and friends. Is there anything specific you'd like to talk about or any memories you'd like to share?";
-      }
-      
-      addBotMessage(response);
-    }, 1500 + Math.random() * 1000); // Random delay between 1.5-2.5 seconds
+    const history: ChatMessage[] = [
+      ...messages.map(m => ({ role: m.sender === 'user' ? 'user' as const : 'assistant' as const, content: m.text })),
+      { role: 'user', content: userMessage }
+    ];
+    setAssistantReply("");
+    start(history);
+    // Render token-by-token
+    const id = `assist-${Date.now()}`;
+    setStreamingMsgId(id);
+    setMessages(prev => [...prev, { id, text: '', sender: 'bot', timestamp: new Date(), isTyping: true }]);
   };
+
+  // Stream a greeting without injecting a visible user message
+  const streamAssistantWelcome = () => {
+    setIsTyping(true);
+    const history: ChatMessage[] = [
+      ...messages.map(m => ({ role: m.sender === 'user' ? 'user' as const : 'assistant' as const, content: m.text })),
+      { role: 'user', content: 'Please greet me warmly in one friendly sentence and invite me to share how I am feeling.' }
+    ];
+    setAssistantReply("");
+    start(history);
+    const id = `assist-${Date.now()}`;
+    setStreamingMsgId(id);
+    setMessages(prev => [...prev, { id, text: '', sender: 'bot', timestamp: new Date(), isTyping: true }]);
+  };
+
+  // Keep the active assistant bubble synced with latest tokens
+  useEffect(() => {
+    if (!streamingMsgId) return;
+    setMessages(prev => prev.map(m => (m.id === streamingMsgId ? { ...m, text: assistantReply } : m)));
+  }, [assistantReply, streamingMsgId]);
+
+  // Finalize once stream completes
+  useEffect(() => {
+    if (!streamingMsgId) return;
+    if (isStreaming) return;
+    setIsTyping(false);
+    setMessages(prev => prev.map(m => (m.id === streamingMsgId ? { ...m, isTyping: false, text: assistantReply } : m)));
+    if (assistantReply) speakMessage(assistantReply);
+    setStreamingMsgId(null);
+  }, [isStreaming, streamingMsgId, assistantReply]);
 
   const handleSendMessage = (text?: string) => {
     const messageToSend = text || inputText;
     if (messageToSend.trim()) {
       addUserMessage(messageToSend.trim());
-      simulateBotResponse(messageToSend.trim());
+      streamBotResponse(messageToSend.trim());
       setInputText('');
     }
   };
@@ -316,6 +361,29 @@ const ChatPage = () => {
               <p className="text-sm text-gray-600">Digital Soul • Online</p>
             </div>
             <div className="ml-auto flex items-center space-x-2">
+              {availablePersonas.length > 0 && (
+                <select
+                  value={personaId || ''}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setPersonaId(nextId);
+                    const found = availablePersonas.find(p => p.id === nextId);
+                    if (found) setPersonaName(found.name || 'Chat');
+                    const url = new URL(window.location.href);
+                    if (nextId) url.searchParams.set('personaId', nextId); else url.searchParams.delete('personaId');
+                    window.history.replaceState({}, '', url.toString());
+                    setMessages([]);
+                  }}
+                  className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white"
+                >
+                  {availablePersonas.map(p => (
+                    <option key={p.id} value={p.id}>{p.name || p.id}</option>
+                  ))}
+                </select>
+              )}
+              {myRole === 'VIEWER' && (
+                <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">Viewer</span>
+              )}
               {userInfo?.isDemo && (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                   Demo Mode

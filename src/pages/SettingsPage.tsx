@@ -22,8 +22,11 @@ import {
   Play
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import { speakText, createVoiceClone, getCloneStatus } from '../lib/api/voice';
 import { useAuthRole } from '../context/AuthRoleContext';
-import { getCurrentUserId, listMyMemberships, listMyPersonas } from '../services/supabaseHelpers';
+import { getCurrentUserId, listMyMemberships, listMyPersonas, listPersonaMemories, addPersonaMemories, updatePersonaMemory, deletePersonaMemory, getMyRoleForPersona } from '../services/supabaseHelpers';
+import PersonaVoicePanel from '../components/PersonaVoicePanel';
+import { supabase } from '../utils/supabaseClient';
 
 interface SettingsData {
   persona: {
@@ -69,6 +72,9 @@ const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('persona');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [currentPersona, setCurrentPersona] = useState<{ id: string; name?: string } | null>(null);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string | null>(null);
   const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
   const mediaStreamRef = React.useRef<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -110,6 +116,13 @@ const SettingsPage = () => {
     }
   });
 
+  const [personaStories, setPersonaStories] = useState<{ id: string; text: string; created_at: string }[]>([]);
+  const [newStory, setNewStory] = useState<string>("");
+  const [myRole, setMyRole] = useState<'OWNER'|'CONTRIBUTOR'|'VIEWER'|null>(null);
+
+  const [cloneStatus, setCloneStatus] = useState<'loading' | 'ready' | 'absent'>('loading');
+  const [voiceId, setVoiceId] = useState<string | null>(null);
+
   // Scroll to top and enforce auth using global auth context
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -124,6 +137,51 @@ const SettingsPage = () => {
       navigate('/');
     }
   }, [navigate, currentUserEmail, isSupabaseAuth]);
+
+  useEffect(() => {
+    // Respect personaId from URL if provided
+    const params = new URLSearchParams(window.location.search);
+    const pid = params.get('personaId');
+    const nm = params.get('name');
+    if (pid) {
+      setSelectedPersonaId(pid);
+      setCurrentPersona(prev => ({ id: pid, name: nm || prev?.name } as any));
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase?.auth.getSession()!;
+      setAuthToken(data.session?.access_token ?? null);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!authToken || !currentPersona) return;
+      try {
+        setCloneStatus('loading');
+        const s = await getCloneStatus(authToken, currentPersona.id);
+        setCloneStatus(s.status);
+        setVoiceId(s.voice_id);
+      } catch {
+        setCloneStatus('absent');
+        setVoiceId(null);
+      }
+      try { setMyRole(await getMyRoleForPersona(currentPersona.id)); } catch {}
+    })();
+  }, [authToken, currentPersona?.id]);
+
+  // Load persona stories when persona changes
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!currentPersona) return;
+        const items = await listPersonaMemories(currentPersona.id, 200);
+        setPersonaStories(items.map(i => ({ id: i.id, text: i.text, created_at: i.created_at })));
+      } catch { setPersonaStories([]); }
+    })();
+  }, [currentPersona?.id]);
 
   // Load current persona details
   useEffect(() => {
@@ -147,8 +205,9 @@ const SettingsPage = () => {
           if (!uid) return;
           const owned = liveP.find(p => p.created_by === uid);
           const firstMember = liveM[0]?.persona_id;
-          const target = owned || liveP.find(p => p.id === firstMember) || liveP[0];
-          if (target) {
+          const byParam = selectedPersonaId ? liveP.find(p => p.id === selectedPersonaId) : null;
+          const target = byParam || owned || liveP.find(p => p.id === firstMember) || liveP[0];
+           if (target) {
             setSettings(prev => ({
               ...prev,
               persona: {
@@ -157,6 +216,8 @@ const SettingsPage = () => {
                 privacyLevel: mapPrivacy(target.privacy),
               },
             }));
+            const p = { id: target.id, name: target.name || undefined };
+            setCurrentPersona(p);
           }
         } catch {
           // ignore
@@ -165,7 +226,8 @@ const SettingsPage = () => {
         const myIds = memberships
           .filter(m => m.userEmail === currentUserEmail)
           .map(m => m.personaId);
-        const target = personas.find(p => myIds.includes(p.id)) || personas[0];
+        const byParam: any = selectedPersonaId ? personas.find(p => p.id === selectedPersonaId) : null;
+        const target: any = byParam || personas.find(p => myIds.includes(p.id)) || personas[0];
         if (target) {
           setSettings(prev => ({
             ...prev,
@@ -175,10 +237,11 @@ const SettingsPage = () => {
               privacyLevel: (target as any).privacy?.toLowerCase?.() || 'family',
             },
           }));
+          setCurrentPersona({ id: (target as any).id, name: (target as any).subjectFullName || undefined });
         }
       }
     })();
-  }, [isSupabaseAuth, currentUserEmail, personas, memberships]);
+  }, [isSupabaseAuth, currentUserEmail, personas, memberships, selectedPersonaId]);
 
   const handleSettingChange = (category: keyof SettingsData, field: string, value: any) => {
     setSettings(prev => ({
@@ -417,7 +480,18 @@ const SettingsPage = () => {
                               name="privacyLevel"
                               value={option.value}
                               checked={settings.persona.privacyLevel === option.value}
-                              onChange={(e) => handleSettingChange('persona', 'privacyLevel', e.target.value)}
+                              onChange={async (e) => {
+                                const v = e.target.value as 'private'|'family'|'friends';
+                                handleSettingChange('persona', 'privacyLevel', v);
+                                try {
+                                  if (currentPersona && isSupabaseAuth) {
+                                    // Map UI values to DB enum used in your schema
+                                    const map: Record<string, 'PRIVATE'|'LINK'|'PUBLIC'> = { private: 'PRIVATE', family: 'LINK', friends: 'PUBLIC' };
+                                    const { updatePersonaPrivacy } = await import('../services/supabaseHelpers');
+                                    await updatePersonaPrivacy({ personaId: currentPersona.id, privacy: map[v] });
+                                  }
+                                } catch {}
+                              }}
                               className="text-purple-600 focus:ring-purple-500"
                             />
                             <div>
@@ -458,6 +532,80 @@ const SettingsPage = () => {
                             className="text-purple-600 focus:ring-purple-500"
                           />
                         </label>
+                      </div>
+                    
+                      {/* Persona Memories & Stories */}
+                      <div className="mt-6">
+                        <div className="flex items-center space-x-3 mb-4">
+                          <Heart className="w-5 h-5 text-purple-600" />
+                          <h3 className="text-lg font-semibold text-gray-900">Memories & Stories</h3>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="flex items-start space-x-2">
+                            <textarea
+                              value={newStory}
+                              onChange={(e) => setNewStory(e.target.value)}
+                              placeholder="Add a new story or memory..."
+                              rows={3}
+                              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                              disabled={myRole === 'VIEWER'}
+                            />
+                            <button
+                              disabled={!newStory.trim() || !currentPersona || myRole === 'VIEWER'}
+                              onClick={async () => {
+                                const text = newStory.trim();
+                                if (!text || !currentPersona) return;
+                                try {
+                                  await addPersonaMemories({ personaId: currentPersona.id, stories: [text], source: 'SETTINGS' });
+                                  setNewStory('');
+                                  const items = await listPersonaMemories(currentPersona.id, 200);
+                                  setPersonaStories(items.map(i => ({ id: i.id, text: i.text, created_at: i.created_at })));
+                                } catch (e: any) { alert(e?.message || 'Failed to add story'); }
+                              }}
+                              className="ml-2 h-[44px] px-4 py-2 bg-purple-600 text-white rounded-xl disabled:opacity-50"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          {personaStories.length === 0 ? (
+                            <div className="text-sm text-gray-600">No stories yet.</div>
+                          ) : (
+                            <ul className="space-y-2">
+                              {personaStories.map(s => (
+                                <li key={s.id} className="p-3 border border-gray-200 rounded-lg">
+                                  <div className="flex items-start justify-between">
+                                    <textarea
+                                      defaultValue={s.text}
+                                      onBlur={async (e) => {
+                                        const text = e.target.value.trim();
+                                        if (text && text !== s.text) {
+                                          if (myRole !== 'VIEWER') { try { await updatePersonaMemory({ id: s.id, text }); } catch {} }
+                                        }
+                                      }}
+                                      className="flex-1 mr-3 text-sm text-gray-800 resize-y focus:ring-2 focus:ring-purple-500 border border-transparent rounded"
+                                      readOnly={myRole === 'VIEWER'}
+                                    />
+                                    <div className="flex items-center space-x-2">
+                                      <button
+                                        onClick={async () => {
+                                          if (myRole === 'VIEWER') return;
+                                          try {
+                                            await deletePersonaMemory({ id: s.id });
+                                            setPersonaStories(prev => prev.filter(p => p.id !== s.id));
+                                          } catch {}
+                                        }}
+                                        className={`text-red-600 hover:text-red-700 text-sm ${myRole === 'VIEWER' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-[11px] text-gray-500">{new Date(s.created_at).toLocaleString()}</div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -533,9 +681,14 @@ const SettingsPage = () => {
                   <div className="space-y-10">
                     {/* Voice Cloning */}
                     <div>
-                      <div className="flex items-center space-x-3 mb-6">
+            <div className="flex items-center space-x-3 mb-6">
                         <Mic className="w-6 h-6 text-purple-600" />
-                        <h2 className="text-2xl font-bold text-gray-900">Voice Cloning</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Voice Cloning</h2>
+              {currentPersona && (
+                <span className="ml-2 text-sm px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                  Persona: {currentPersona.name || currentPersona.id}
+                </span>
+              )}
                       </div>
 
                       {/* Mode selector */}
@@ -638,14 +791,30 @@ const SettingsPage = () => {
 
                         <div className="rounded-xl border border-gray-200 p-4">
                           <p className="text-sm text-gray-600 mb-3">Status</p>
-                          {settings.media.voiceStatus === 'not_started' && (
+                          {cloneStatus === 'loading' && (
+                            <div className="flex items-center space-x-3 text-purple-700">
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>Checking status…</span>
+                            </div>
+                          )}
+                          {cloneStatus === 'absent' && (
                             <div className="space-y-4">
                               <p className="text-gray-700">No voice profile yet. {settings.media.voiceMode === 'upload' ? 'Upload a few samples' : 'Record the prompts'} and start cloning.</p>
                               <button
-                                disabled={settings.media.voiceMode === 'upload' ? settings.media.voiceSamples.length === 0 : (settings.media.scriptRecordings.filter(Boolean).length === 0)}
-                                onClick={() => {
-                                  handleSettingChange('media', 'voiceStatus', 'processing');
-                                  setTimeout(() => handleSettingChange('media', 'voiceStatus', 'ready'), 2000);
+                                disabled={!authToken || !currentPersona || (settings.media.voiceMode === 'upload' ? settings.media.voiceSamples.length === 0 : (settings.media.scriptRecordings.filter(Boolean).length === 0))}
+                                onClick={async () => {
+                                  if (!authToken || !currentPersona) return;
+                                  const files: File[] = settings.media.voiceMode === 'upload'
+                                    ? settings.media.voiceSamples
+                                    : (settings.media.scriptRecordings.filter(Boolean).map((r, i) => new File([r.blob], `recording-${i}.webm`, { type: 'audio/webm' })) as any);
+                                  try {
+                                    const res = await createVoiceClone(authToken, currentPersona.id, files.slice(0, 3), currentPersona.name);
+                                    setCloneStatus(res.status);
+                                    setVoiceId(res.voice_id);
+                                    alert('Voice clone ready.');
+                                  } catch (e: any) {
+                                    alert(e?.message || 'Failed to create clone');
+                                  }
                                 }}
                                 className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
                               >
@@ -653,26 +822,31 @@ const SettingsPage = () => {
                               </button>
                             </div>
                           )}
-                          {settings.media.voiceStatus === 'processing' && (
-                            <div className="flex items-center space-x-3 text-purple-700">
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              <span>Processing samples… This may take a minute.</span>
-                            </div>
-                          )}
-                          {settings.media.voiceStatus === 'ready' && (
+                          {cloneStatus === 'ready' && (
                             <div className="space-y-4">
                               <div className="flex items-center space-x-2 text-green-700">
                                 <Check className="w-5 h-5" />
-                                <span>Voice profile is ready.</span>
+                                <span>Voice profile is ready{voiceId ? ` (id: ${voiceId})` : ''}.</span>
                               </div>
                               <div className="flex items-center space-x-2">
-                                <button className="px-3 py-2 bg-gray-100 rounded-lg flex items-center space-x-2">
+                                <button
+                                  className="px-3 py-2 bg-gray-100 rounded-lg flex items-center space-x-2 disabled:opacity-50"
+                                  disabled={!authToken || !currentPersona}
+                                  onClick={async () => {
+                                    if (!authToken || !currentPersona) return;
+                                    try {
+                                      await speakText(authToken, currentPersona.id, 'This is a short preview of your cloned voice.');
+                                    } catch (e: any) {
+                                      alert(e?.message || 'Preview failed');
+                                    }
+                                  }}
+                                >
                                   <Play className="w-4 h-4" />
                                   <span>Preview</span>
                                 </button>
                                 <button
                                   className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
-                                  onClick={() => handleSettingChange('media', 'voiceStatus', 'not_started')}
+                                  onClick={() => setCloneStatus('absent')}
                                 >
                                   Re-clone Voice
                                 </button>
@@ -680,6 +854,21 @@ const SettingsPage = () => {
                             </div>
                           )}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Server-backed Voice features */}
+                    <div>
+                      <div className="flex items-center space-x-3 mb-6">
+                        <Mic className="w-6 h-6 text-purple-600" />
+                        <h2 className="text-2xl font-bold text-gray-900">Live Voice Features</h2>
+                      </div>
+                      <div className="rounded-2xl border border-gray-200 p-4">
+                        {currentPersona && authToken ? (
+                          <PersonaVoicePanel personaId={currentPersona.id} personaName={currentPersona.name} authToken={authToken} />
+                        ) : (
+                          <div className="text-sm text-gray-600">Sign in and select a persona to use voice features.</div>
+                        )}
                       </div>
                     </div>
 

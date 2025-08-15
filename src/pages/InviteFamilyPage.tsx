@@ -320,7 +320,8 @@ const InviteFamilyPage = () => {
     const params = new URLSearchParams({ invitation: latestForPersona.token, role: String(latestForPersona.role), personaId: chosenPersonaId });
     const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
     if (resolvedName) params.set('name', resolvedName);
-    const inviteLink = `${window.location.origin}/contributor?${params.toString()}`;
+    const basePath = String(latestForPersona.role).toUpperCase() === 'VIEWER' ? '/chat' : '/contributor';
+    const inviteLink = `${window.location.origin}${basePath}?${params.toString()}`;
     navigator.clipboard.writeText(inviteLink);
     setCopiedEmail('link');
     setTimeout(() => setCopiedEmail(null), 2000);
@@ -509,7 +510,8 @@ const InviteFamilyPage = () => {
                           const params = new URLSearchParams({ invitation: i.token, role: String(i.role), personaId: personaIdForLink });
                           const resolvedName = persona?.subjectFullName || defaultPersonaNameFromUrl;
                           if (resolvedName) params.set('name', resolvedName);
-                          const link = `${window.location.origin}/contributor?${params.toString()}`;
+                          const basePath = String(i.role).toUpperCase() === 'VIEWER' ? '/chat' : '/contributor';
+                          const link = `${window.location.origin}${basePath}?${params.toString()}`;
                           navigator.clipboard.writeText(link);
                           setCopiedEmail('link');
                           setTimeout(() => setCopiedEmail(null), 1500);

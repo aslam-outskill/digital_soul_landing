@@ -46,6 +46,15 @@ export async function getPersonaById(personaId: string) {
   return data as Tables<'personas'>
 }
 
+export async function updatePersonaPrivacy(params: { personaId: string; privacy: 'PRIVATE' | 'LINK' | 'PUBLIC' }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await supabase
+    .from('personas')
+    .update({ privacy: params.privacy })
+    .eq('id', params.personaId)
+  if (error) throw new Error(error.message)
+}
+
 export async function listInvitesForPersonaIds(personaIds: string[]) {
   if (!supabase) throw new Error('Supabase not configured')
   if (!personaIds || personaIds.length === 0) return [] as Tables<'persona_invites'>[]
@@ -201,6 +210,56 @@ export async function deleteContribution(params: { id: string }) {
   if (error) throw new Error(error.message)
 }
 
+// Persona stories/memories helpers (persisted in persona_contributions as APPROVED)
+export interface PersonaMemoryItem { id: string; text: string; status: 'PENDING'|'APPROVED'|'REJECTED'; created_at: string }
+
+export async function addPersonaMemories(params: { personaId: string; stories: string[]; source?: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const rows = (params.stories || [])
+    .map(s => (s || '').trim())
+    .filter(Boolean)
+    .map(s => ({
+      persona_id: params.personaId,
+      status: 'APPROVED',
+      content: { story: s, source: params.source || 'SETUP' }
+    }))
+  if (rows.length === 0) return
+  const { error } = await (supabase as any)
+    .from('persona_contributions')
+    .insert(rows)
+  if (error) throw new Error(error.message)
+}
+
+export async function listPersonaMemories(personaId: string, limit?: number): Promise<PersonaMemoryItem[]> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { data, error } = await (supabase as any)
+    .from('persona_contributions')
+    .select('id, content, status, created_at')
+    .eq('persona_id', personaId)
+    .order('created_at', { ascending: false })
+    .limit(limit || 100)
+  if (error) throw new Error(error.message)
+  return (data || []).map((r: any) => ({ id: r.id, text: (r.content?.story || r.content?.text || r.content?.summary || '').toString(), status: r.status, created_at: r.created_at }))
+}
+
+export async function updatePersonaMemory(params: { id: string; text: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await (supabase as any)
+    .from('persona_contributions')
+    .update({ content: { story: params.text, source: 'SETTINGS' } })
+    .eq('id', params.id)
+  if (error) throw new Error(error.message)
+}
+
+export async function deletePersonaMemory(params: { id: string }) {
+  if (!supabase) throw new Error('Supabase not configured')
+  const { error } = await (supabase as any)
+    .from('persona_contributions')
+    .delete()
+    .eq('id', params.id)
+  if (error) throw new Error(error.message)
+}
+
 export async function getCurrentUserId() {
   if (!supabase) throw new Error('Supabase not configured')
   const { data, error } = await supabase.auth.getUser()
@@ -218,6 +277,20 @@ export async function listMyMemberships() {
     .eq('user_id', userId)
   if (error) throw new Error(error.message)
   return data as Tables<'persona_memberships'>[]
+}
+
+export async function getMyRoleForPersona(personaId: string): Promise<'OWNER'|'CONTRIBUTOR'|'VIEWER'|null> {
+  if (!supabase) throw new Error('Supabase not configured')
+  const userId = await getCurrentUserId()
+  if (!userId) return null
+  const { data, error } = await supabase
+    .from('persona_memberships')
+    .select('role')
+    .eq('persona_id', personaId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data?.role as any) ?? null
 }
 
 export async function createInvite(input: TablesInsert<'persona_invites'>) {

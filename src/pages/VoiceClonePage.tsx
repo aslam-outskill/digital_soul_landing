@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, 
@@ -16,11 +16,14 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react';
+import PersonaVoicePanel from '../components/PersonaVoicePanel';
+import { supabase } from '../utils/supabaseClient';
 import Logo from '../components/Logo';
 
 const VoiceClonePage = () => {
   const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSample, setCurrentSample] = useState(0);
   const [trainingProgress, setTrainingProgress] = useState(0);
@@ -86,6 +89,13 @@ const VoiceClonePage = () => {
       setIsPlaying(false);
     }, 2000);
   };
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase?.auth.getSession()!;
+      setAuthToken(data.session?.access_token ?? null);
+    })();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
@@ -194,109 +204,14 @@ const VoiceClonePage = () => {
               </div>
             </div>
 
-            {/* Center Panel - Recording/Upload Interface */}
+            {/* Center Panel - Real implementation panel */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-2xl shadow-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                  <Mic className="w-5 h-5 mr-2 text-purple-600" />
-                  {uploadMode === 'record' ? 'Record Sample' : 'Upload Sample'}
-                </h3>
-
-                {/* Mode Toggle */}
-                <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
-                  <button
-                    onClick={() => setUploadMode('record')}
-                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                      uploadMode === 'record'
-                        ? 'bg-white text-purple-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Mic className="w-4 h-4 inline mr-2" />
-                    Record Live
-                  </button>
-                  <button
-                    onClick={() => setUploadMode('upload')}
-                    className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                      uploadMode === 'upload'
-                        ? 'bg-white text-purple-600 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    <Upload className="w-4 h-4 inline mr-2" />
-                    Upload File
-                  </button>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-gray-700 text-center font-medium">
-                      "{sampleTexts[currentSample]}"
-                    </p>
-                  </div>
-
-                  {uploadMode === 'record' ? (
-                    <div className="text-center">
-                      <button
-                        onClick={simulateRecording}
-                        disabled={isRecording}
-                        className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-                          isRecording
-                            ? 'bg-red-500 text-white animate-pulse'
-                            : 'bg-purple-500 text-white hover:bg-purple-600'
-                        }`}
-                      >
-                        <Mic className="w-8 h-8" />
-                      </button>
-                      <p className="text-sm text-gray-600 mt-3">
-                        {isRecording ? 'Recording... (Demo)' : 'Click to start recording (Demo)'}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
-                        <FileAudio className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 mb-4">
-                          Upload an audio file for this sample
-                        </p>
-                        <p className="text-xs text-gray-500 mb-4">
-                          Supported formats: MP3, WAV, M4A, OGG (Max 50MB)
-                        </p>
-                        <button
-                          onClick={simulateUpload}
-                          className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                        >
-                          Choose Audio File (Demo)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <div className="flex justify-center space-x-2">
-                      <button 
-                        onClick={simulatePlay}
-                        disabled={isPlaying}
-                        className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center disabled:opacity-50"
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        {isPlaying ? 'Playing...' : 'Play (Demo)'}
-                      </button>
-                      <button className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center">
-                        <Pause className="w-4 h-4 mr-2" />
-                        Stop
-                      </button>
-                    </div>
-                    <div className="flex justify-center space-x-2">
-                      <button className="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 text-sm">
-                        Reset
-                      </button>
-                      <button className="px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm">
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                {authToken ? (
+                  <PersonaVoicePanel personaId={"placeholder-persona-id"} authToken={authToken} />
+                ) : (
+                  <div className="text-sm text-gray-600">Sign in to access voice features.</div>
+                )}
               </div>
             </div>
 
