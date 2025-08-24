@@ -16,18 +16,18 @@ export const handler: Handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") return { statusCode: 405, body: "Method Not Allowed" };
     const req = new Request(new URL(event.rawUrl), { method: "POST", headers: event.headers as any, body: event.body });
-    const { SIMLI_EXPOSE_KEY } = process.env;
+    const exposeMode = process.env.SIMLI_EXPOSE_KEY === "true";
     // Require auth unless explicitly in expose mode (dev/test)
-    if (SIMLI_EXPOSE_KEY !== "true") {
+    if (!exposeMode) {
       const user = await getUserFromRequest(req);
       if (!user) return { statusCode: 401, body: "Unauthorized" };
     }
 
-    const { SIMLI_API_KEY, SIMLI_FACE_ID, SIMLI_EXPOSE_KEY } = process.env;
+    const { SIMLI_API_KEY, SIMLI_FACE_ID } = process.env;
     if (!SIMLI_API_KEY) return { statusCode: 500, body: "Missing SIMLI_API_KEY" };
 
     // For development only: allow returning the API key to the browser
-    if (SIMLI_EXPOSE_KEY === "true") {
+    if (exposeMode) {
       return {
         statusCode: 200,
         body: JSON.stringify({ ok: true, api_key: SIMLI_API_KEY, face_id: SIMLI_FACE_ID || null })
