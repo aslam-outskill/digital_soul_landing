@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { speakText, createVoiceClone, getCloneStatus } from '../lib/api/voice';
+import { uploadAvatarMedia, generateLipsyncVideo, getAvatarTaskStatus } from '../lib/api/avatar';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { getCurrentUserId, listMyMemberships, listMyPersonas, listPersonaMemories, addPersonaMemories, updatePersonaMemory, deletePersonaMemory, getMyRoleForPersona } from '../services/supabaseHelpers';
 import PersonaVoicePanel from '../components/PersonaVoicePanel';
@@ -122,6 +123,9 @@ const SettingsPage = () => {
 
   const [cloneStatus, setCloneStatus] = useState<'loading' | 'ready' | 'absent'>('loading');
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [avatarTaskId, setAvatarTaskId] = useState<string | null>(null);
+  const [avatarVideoUrl, setAvatarVideoUrl] = useState<string | null>(null);
+  const [lipsyncText, setLipsyncText] = useState<string>("");
 
   // Scroll to top and enforce auth using global auth context
   useEffect(() => {
@@ -171,6 +175,32 @@ const SettingsPage = () => {
       try { setMyRole(await getMyRoleForPersona(currentPersona.id)); } catch {}
     })();
   }, [authToken, currentPersona?.id]);
+
+  // Poll Heygen task status if we have an active task
+  useEffect(() => {
+    if (!authToken || !currentPersona?.id || !avatarTaskId) return;
+    let isCancelled = false;
+    const tick = async () => {
+      try {
+        const s = await getAvatarTaskStatus(authToken, currentPersona.id, avatarTaskId);
+        if (isCancelled) return;
+        if (s.status === 'ready') {
+          setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'ready' } }));
+          setAvatarVideoUrl(s.video_url);
+          setAvatarTaskId(null);
+        } else if (s.status === 'failed') {
+          setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'not_started' } }));
+          setAvatarTaskId(null);
+        } else {
+          setTimeout(tick, 4000);
+        }
+      } catch {
+        if (!isCancelled) setTimeout(tick, 5000);
+      }
+    };
+    setTimeout(tick, 1200);
+    return () => { isCancelled = true; };
+  }, [authToken, currentPersona?.id, avatarTaskId]);
 
   // Load persona stories when persona changes
   useEffect(() => {
@@ -675,8 +705,7 @@ const SettingsPage = () => {
                   </div>
                 )}
 
-                {/* Voice & Avatar */
-                }
+                {/* Voice & Avatar */}
                 {activeTab === 'voice' && (
                   <div className="space-y-10">
                     {/* Voice Cloning */}
@@ -864,11 +893,18 @@ const SettingsPage = () => {
                         <h2 className="text-2xl font-bold text-gray-900">Live Voice Features</h2>
                       </div>
                       <div className="rounded-2xl border border-gray-200 p-4">
-                        {currentPersona && authToken ? (
-                          <PersonaVoicePanel personaId={currentPersona.id} personaName={currentPersona.name} authToken={authToken} />
-                        ) : (
-                          <div className="text-sm text-gray-600">Sign in and select a persona to use voice features.</div>
-                        )}
+                        {(() => {
+                          console.log("SettingsPage: PersonaVoicePanel check", { 
+                            hasPersona: !!currentPersona, 
+                            hasToken: !!authToken,
+                            personaId: currentPersona?.id 
+                          });
+                          return currentPersona && authToken ? (
+                            <PersonaVoicePanel personaId={currentPersona.id} personaName={currentPersona.name} authToken={authToken} />
+                          ) : (
+                            <div className="text-sm text-gray-600">Sign in and select a persona to use voice features.</div>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -924,17 +960,24 @@ const SettingsPage = () => {
                           <p className="text-sm text-gray-600 mb-3">Status</p>
                           {settings.media.avatarStatus === 'not_started' && (
                             <div className="space-y-4">
-                              <p className="text-gray-700">No video avatar yet. Upload at least one file and generate.</p>
+                              <p className="text-gray-700">No video avatar yet. Upload at least one file and generate, or use the default avatar for lip-sync.</p>
                               <button
-                                disabled={settings.media.avatarReferences.length === 0}
-                                onClick={() => {
-                                  handleSettingChange('media', 'avatarStatus', 'processing');
-                                  setTimeout(() => handleSettingChange('media', 'avatarStatus', 'ready'), 2500);
+                                disabled={!authToken || !currentPersona || settings.media.avatarReferences.length === 0}
+                                onClick={async () => {
+                                  if (!authToken || !currentPersona) return;
+                                  try {
+                                    handleSettingChange('media', 'avatarStatus', 'processing');
+                                    await uploadAvatarMedia(authToken, currentPersona.id, settings.media.avatarReferences, currentPersona.name);
+                                  } catch (e: any) {
+                                    handleSettingChange('media', 'avatarStatus', 'not_started');
+                                    alert(e?.message || 'Avatar upload failed');
+                                  }
                                 }}
                                 className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
                               >
                                 Generate Video Avatar
                               </button>
+                              <div className="text-xs text-gray-500">Tip: You can still generate a lip-sync video with a default avatar if you skip uploading.</div>
                             </div>
                           )}
                           {settings.media.avatarStatus === 'processing' && (
@@ -963,7 +1006,52 @@ const SettingsPage = () => {
                               </div>
                             </div>
                           )}
+                          {avatarVideoUrl && (
+                            <div className="mt-4">
+                              <video className="w-full rounded-lg" src={avatarVideoUrl} controls />
+                            </div>
+                          )}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Lip-sync generation */}
+                    <div className="mt-6 grid md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Lip-sync Text</label>
+                        <textarea
+                          value={lipsyncText}
+                          onChange={(e) => setLipsyncText(e.target.value)}
+                          rows={4}
+                          placeholder="Type text to generate a lip-synced video"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                        />
+                        <div className="mt-3 text-xs text-gray-500">If you haven’t uploaded an avatar, a default avatar will be used.</div>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          className="px-4 py-3 bg-purple-600 text-white rounded-lg disabled:opacity-50"
+                          disabled={!authToken || !currentPersona || !lipsyncText.trim()}
+                          onClick={async () => {
+                            if (!authToken || !currentPersona) return;
+                            try {
+                              setAvatarVideoUrl(null);
+                              setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'processing' } }));
+                              const r = await generateLipsyncVideo({ token: authToken, personaId: currentPersona.id, text: lipsyncText.trim() });
+                              if (r.video_url) {
+                                setAvatarVideoUrl(r.video_url);
+                                setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'ready' } }));
+                              } else if (r.task_id) {
+                                setAvatarTaskId(r.task_id);
+                              }
+                            } catch (e: any) {
+                              setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'not_started' } }));
+                              alert(e?.message || 'Failed to generate lip-sync');
+                            }
+                          }}
+                        >
+                          Generate Lip-sync Video
+                        </button>
                       </div>
                     </div>
                   </div>

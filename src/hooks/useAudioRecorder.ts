@@ -20,7 +20,8 @@ export function useAudioRecorder() {
     if (!mr) throw new Error("Not recording");
     return new Promise((resolve) => {
       mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const preferredType = (mr as any).mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: preferredType });
         setRecording(false);
         resolve(blob);
       };

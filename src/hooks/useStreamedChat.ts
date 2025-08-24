@@ -8,7 +8,7 @@ export function useStreamedChat(token: string | null, personaId: string | null) 
 
   const start = useCallback(
     (history: ChatMessage[]) => {
-      if (!personaId) return;
+      if (!personaId) return; // token is optional
       setAssistantReply("");
       setIsStreaming(true);
       abortRef.current?.();

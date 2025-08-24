@@ -24,6 +24,7 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
 
   async function loadClips(limit: number = 5) {
     try {
+      console.log("PersonaVoicePanel: loadClips called with limit", limit);
       // Guard when supabase is not configured in local demo
       if (!supabase) { setClips([]); return; }
       async function loadFromStorage(maxItems: number) {
@@ -110,7 +111,8 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
 
       if (normalized.length > 0) setClips(normalized);
       // If nothing found, keep whatever is currently displayed to avoid flicker
-    } catch {
+    } catch (error) {
+      console.log("PersonaVoicePanel: loadClips error", error);
       // On error, preserve any existing clips rather than clearing the list
     }
   }
@@ -129,6 +131,11 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
 
   useEffect(() => { refresh(); }, [personaId, authToken]);
   useEffect(() => { loadClips(5); }, [personaId, activeChatId]);
+  
+  // Debug logging
+  useEffect(() => {
+    console.log("PersonaVoicePanel: status =", status, "recording =", recording);
+  }, [status, recording]);
 
   async function onCreateClone() {
     if (!files.length) return alert("Please select 1-3 audio files.");
@@ -148,12 +155,18 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
   }
 
   async function onRecordToggle() {
+    console.log("PersonaVoicePanel: onRecordToggle called, recording:", recording);
     if (!recording) {
+      console.log("PersonaVoicePanel: Starting recording...");
       await start();
     } else {
+      console.log("PersonaVoicePanel: Stopping recording...");
       const blob = await stop();
+      console.log("PersonaVoicePanel: Got blob", { size: blob.size, type: blob.type });
       try {
+        console.log("PersonaVoicePanel: Calling voiceChat API...", { personaId, activeChatId });
         const data = await voiceChat(authToken, personaId, blob, activeChatId);
+        console.log("PersonaVoicePanel: Got response", data);
         setAssistantText(data.assistant_text);
         if (!activeChatId && data.chat_id) {
           setActiveChatId(data.chat_id);
@@ -180,6 +193,8 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
     }
   }
 
+  console.log("PersonaVoicePanel: Rendering with sections - Voice Clone, Text to Voice, Voice Chat, Voice Clips");
+  
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <section style={{ padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
@@ -216,7 +231,12 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
         <h3>Voice Chat</h3>
         <div>
           <button
-            onClick={onRecordToggle}
+            onClick={() => {
+              console.log("Button clicked! Status:", status, "Disabled:", status !== "ready");
+              if (status === "ready") {
+                onRecordToggle();
+              }
+            }}
             disabled={status !== "ready"}
             className={
               (status === "ready"
@@ -236,6 +256,7 @@ export default function PersonaVoicePanel({ personaId, personaName, authToken, i
 
       <section style={{ padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
         <h3>Voice Clips</h3>
+
         {clips.length === 0 ? (
           <small>No voice clips yet.</small>
         ) : (

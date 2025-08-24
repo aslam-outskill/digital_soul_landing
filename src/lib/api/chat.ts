@@ -11,6 +11,7 @@ export function streamChat(
   onDone?: () => void,
   onError?: (err: any) => void
 ) {
+
   const controller = new AbortController();
   const url = "/.netlify/functions/chat"; // Netlify function path
 
