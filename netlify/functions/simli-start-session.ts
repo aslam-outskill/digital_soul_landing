@@ -11,6 +11,7 @@
 */
 import type { Handler } from "@netlify/functions";
 import { getUserFromRequest } from "./_lib/auth";
+import { supabaseService } from "./_lib/supabase";
 
 export const handler: Handler = async (event) => {
   try {
@@ -28,9 +29,24 @@ export const handler: Handler = async (event) => {
 
     // For development only: allow returning the API key to the browser
     if (exposeMode) {
+      // Prefer persona metadata simli_face_id when provided via query param persona_id
+      let effectiveFaceId: string | null = SIMLI_FACE_ID || null;
+      try {
+        const url = new URL(event.rawUrl);
+        const personaId = url.searchParams.get('persona_id');
+        if (personaId) {
+          const { data: persona } = await supabaseService
+            .from('personas')
+            .select('metadata')
+            .eq('id', personaId)
+            .maybeSingle();
+          const meta = (persona?.metadata as any) || {};
+          if (meta.simli_face_id) effectiveFaceId = String(meta.simli_face_id);
+        }
+      } catch { /* ignore and fallback */ }
       return {
         statusCode: 200,
-        body: JSON.stringify({ ok: true, api_key: SIMLI_API_KEY, face_id: SIMLI_FACE_ID || null })
+        body: JSON.stringify({ ok: true, api_key: SIMLI_API_KEY, face_id: effectiveFaceId })
       };
     }
 

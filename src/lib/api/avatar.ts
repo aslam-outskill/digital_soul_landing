@@ -45,4 +45,29 @@ export async function getAvatarTaskStatus(token: string, personaId: string, task
   return res.json() as Promise<{ status: "queued" | "processing" | "ready" | "failed"; video_url: string | null }>;
 }
 
+// Simli legacy face create
+export async function simliCreateFace(token: string, personaId: string, images: File[]) {
+  const fd = new FormData();
+  fd.set("persona_id", personaId);
+  images.forEach((f) => fd.append("images", f));
+  const res = await fetch("/.netlify/functions/simli-face-create", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd
+  });
+  if (res.status === 429) throw new Error("Avatar creation quota reached for your plan");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ ok: boolean; request_id: string | null; status: string }>;
+}
+
+export async function simliFaceStatus(token: string, personaId: string, requestId: string) {
+  const res = await fetch("/.netlify/functions/simli-face-status", {
+    method: "POST",
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ persona_id: personaId, request_id: requestId })
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json() as Promise<{ status: "queued" | "processing" | "ready" | "failed"; face_id: string | null }>;
+}
+
 

@@ -14,6 +14,7 @@ import {
   VolumeX
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import PersonaAvatar from '../components/PersonaAvatar';
 import { speakText, speakTextPreview } from '../lib/api/voice';
 import { supabase } from '../utils/supabaseClient';
 import { useAuthRole } from '../context/AuthRoleContext';
@@ -236,7 +237,7 @@ const ChatPage = () => {
 
   const simliRef = useRef<SimliAvatarHandle | null>(null);
 
-  const speakMessage = async (text: string) => {
+  const speakMessage = async (text: string, opts?: { onStart?: () => void }) => {
     try {
       if (!voiceEnabled) return;
       // Prefer server TTS (clone or default) when signed in and persona is known
@@ -248,6 +249,7 @@ const ChatPage = () => {
             // Route a copy to Simli (no extra WebAudio output)
             try { await simliRef.current?.attachAudioElement(audio, false); } catch {}
             // Play via HTMLAudioElement only to avoid double audio paths
+            try { audio.addEventListener('play', () => { try { opts?.onStart?.(); } catch {} }); } catch {}
             audio.muted = false;
             await audio.play().catch(() => {});
           } else {
@@ -266,6 +268,7 @@ const ChatPage = () => {
         if (audio) {
           if (isSimliActive) {
             try { await simliRef.current?.attachAudioElement(audio, false); } catch {}
+            try { audio.addEventListener('play', () => { try { opts?.onStart?.(); } catch {} }); } catch {}
             audio.muted = false;
             await audio.play().catch(() => {});
           } else {
@@ -322,17 +325,21 @@ const ChatPage = () => {
       return;
     }
     
-    setIsTyping(true);
+    setIsTyping(!isSimliActive);
     const history: ChatMessage[] = [
       ...messages.map(m => ({ role: m.sender === 'user' ? 'user' as const : 'assistant' as const, content: m.text })),
       { role: 'user', content: userMessage }
     ];
     setAssistantReply("");
     start(history);
-    // Render token-by-token
-    const id = `assist-${Date.now()}`;
-    setStreamingMsgId(id);
-    setMessages(prev => [...prev, { id, text: '', sender: 'bot', timestamp: new Date(), isTyping: true }]);
+    // Render token-by-token only when Simli avatar is inactive
+    if (!isSimliActive) {
+      const id = `assist-${Date.now()}`;
+      setStreamingMsgId(id);
+      setMessages(prev => [...prev, { id, text: '', sender: 'bot', timestamp: new Date(), isTyping: true }]);
+    } else {
+      setStreamingMsgId(null);
+    }
   };
 
   // Stream a greeting without injecting a visible user message
@@ -349,21 +356,33 @@ const ChatPage = () => {
     setMessages(prev => [...prev, { id, text: '', sender: 'bot', timestamp: new Date(), isTyping: true }]);
   };
 
-  // Keep the active assistant bubble synced with latest tokens
+  // Keep the active assistant bubble synced with latest tokens (text hidden if Simli is active)
   useEffect(() => {
-    if (!streamingMsgId) return;
+    if (!streamingMsgId || isSimliActive) return;
     setMessages(prev => prev.map(m => (m.id === streamingMsgId ? { ...m, text: assistantReply } : m)));
-  }, [assistantReply, streamingMsgId]);
+  }, [assistantReply, streamingMsgId, isSimliActive]);
+
+  // reserved refs for future sync modes
+  // const pendingAssistantTextRef = useRef<string | null>(null);
+  // const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Finalize once stream completes
   useEffect(() => {
-    if (!streamingMsgId) return;
+    // finalize only after stream finishes
     if (isStreaming) return;
+    // When Simli avatar is active: play voice/lip-sync only; do not show assistant text
+    if (isSimliActive) {
+      if (assistantReply) void speakMessage(assistantReply);
+      setIsTyping(false);
+      setStreamingMsgId(null);
+      return;
+    }
+    if (!streamingMsgId) return;
     setIsTyping(false);
     setMessages(prev => prev.map(m => (m.id === streamingMsgId ? { ...m, isTyping: false, text: assistantReply } : m)));
-    if (assistantReply) speakMessage(assistantReply);
+    if (assistantReply) void speakMessage(assistantReply);
     setStreamingMsgId(null);
-  }, [isStreaming, streamingMsgId, assistantReply]);
+  }, [isStreaming, streamingMsgId, assistantReply, isSimliActive]);
 
   const handleSendMessage = (text?: string) => {
     const messageToSend = text || inputText;
@@ -412,9 +431,7 @@ const ChatPage = () => {
         {/* Chat Header */}
         <div className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
           <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <Heart className="w-6 h-6 text-purple-600" />
-            </div>
+            <PersonaAvatar personaId={personaId} name={personaName} size={48} />
             <div>
               <h1 className="text-xl font-bold text-gray-900">{personaName || (userInfo?.isDemo ? 'Sarah Johnson' : 'Chat')}</h1>
               <p className="text-sm text-gray-600">Digital Soul • Online</p>
@@ -555,6 +572,7 @@ const ChatPage = () => {
                   <SimliAvatarPanel
                     ref={simliRef}
                     authToken={authToken}
+                    personaId={personaId}
                     onActiveChange={setIsSimliActive}
                     modeToggle={
                       isAvatarFloating ? (

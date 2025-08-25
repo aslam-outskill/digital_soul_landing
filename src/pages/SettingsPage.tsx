@@ -23,10 +23,12 @@ import {
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import { speakText, createVoiceClone, getCloneStatus } from '../lib/api/voice';
-import { uploadAvatarMedia, generateLipsyncVideo, getAvatarTaskStatus } from '../lib/api/avatar';
+import { generateLipsyncVideo, getAvatarTaskStatus } from '../lib/api/avatar';
+import SimliFaceCreator from '../components/SimliFaceCreator';
 import { useAuthRole } from '../context/AuthRoleContext';
 import { getCurrentUserId, listMyMemberships, listMyPersonas, listPersonaMemories, addPersonaMemories, updatePersonaMemory, deletePersonaMemory, getMyRoleForPersona } from '../services/supabaseHelpers';
 import PersonaVoicePanel from '../components/PersonaVoicePanel';
+import PersonaAvatar from '../components/PersonaAvatar';
 import { supabase } from '../utils/supabaseClient';
 
 interface SettingsData {
@@ -124,7 +126,7 @@ const SettingsPage = () => {
   const [cloneStatus, setCloneStatus] = useState<'loading' | 'ready' | 'absent'>('loading');
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [avatarTaskId, setAvatarTaskId] = useState<string | null>(null);
-  const [avatarVideoUrl, setAvatarVideoUrl] = useState<string | null>(null);
+  // const [avatarVideoUrl, setAvatarVideoUrl] = useState<string | null>(null); // reserved for future preview flow
   const [lipsyncText, setLipsyncText] = useState<string>("");
 
   // Scroll to top and enforce auth using global auth context
@@ -186,7 +188,7 @@ const SettingsPage = () => {
         if (isCancelled) return;
         if (s.status === 'ready') {
           setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'ready' } }));
-          setAvatarVideoUrl(s.video_url);
+          // reserved for future preview: s.video_url
           setAvatarTaskId(null);
         } else if (s.status === 'failed') {
           setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'not_started' } }));
@@ -570,6 +572,9 @@ const SettingsPage = () => {
                           <Heart className="w-5 h-5 text-purple-600" />
                           <h3 className="text-lg font-semibold text-gray-900">Memories & Stories</h3>
                         </div>
+
+                        {/* Removed duplicate Video Avatar generator from Memories & Stories.
+                            The primary generator now lives under the Voice & Avatar tab. */}
                         <div className="space-y-3">
                           <div className="flex items-start space-x-2">
                             <textarea
@@ -913,106 +918,17 @@ const SettingsPage = () => {
                       <div className="flex items-center space-x-3 mb-6">
                         <VideoIcon className="w-6 h-6 text-purple-600" />
                         <h2 className="text-2xl font-bold text-gray-900">Video Avatar</h2>
+                        {currentPersona && (
+                          <PersonaAvatar personaId={currentPersona.id} name={currentPersona.name} size={28} />
+                        )}
                       </div>
 
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Upload Reference Video or Photos
-                          </label>
-                          <div className="space-y-3">
-                            {settings.media.avatarReferences.map((file, index) => (
-                              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                <div className="flex items-center space-x-3">
-                                  <VideoIcon className="w-5 h-5 text-gray-400" />
-                                  <span className="text-sm text-gray-700 truncate max-w-[220px]">{file.name}</span>
-                                </div>
-                                <button
-                                  className="text-red-600 hover:text-red-700 text-sm"
-                                  onClick={() => {
-                                    const next = settings.media.avatarReferences.filter((_, i) => i !== index);
-                                    handleSettingChange('media', 'avatarReferences', next);
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-
-                            <label className="block p-4 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-purple-400 hover:text-purple-600 transition-colors">
-                              <Upload className="w-6 h-6 mx-auto mb-2" />
-                              <span>Add video or images</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept="video/*,image/*"
-                                onChange={(e) => {
-                                  const files = Array.from(e.target.files || []);
-                                  handleSettingChange('media', 'avatarReferences', [...settings.media.avatarReferences, ...files]);
-                                }}
-                                className="hidden"
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="rounded-xl border border-gray-200 p-4">
-                          <p className="text-sm text-gray-600 mb-3">Status</p>
-                          {settings.media.avatarStatus === 'not_started' && (
-                            <div className="space-y-4">
-                              <p className="text-gray-700">No video avatar yet. Upload at least one file and generate, or use the default avatar for lip-sync.</p>
-                              <button
-                                disabled={!authToken || !currentPersona || settings.media.avatarReferences.length === 0}
-                                onClick={async () => {
-                                  if (!authToken || !currentPersona) return;
-                                  try {
-                                    handleSettingChange('media', 'avatarStatus', 'processing');
-                                    await uploadAvatarMedia(authToken, currentPersona.id, settings.media.avatarReferences, currentPersona.name);
-                                  } catch (e: any) {
-                                    handleSettingChange('media', 'avatarStatus', 'not_started');
-                                    alert(e?.message || 'Avatar upload failed');
-                                  }
-                                }}
-                                className="px-4 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
-                              >
-                                Generate Video Avatar
-                              </button>
-                              <div className="text-xs text-gray-500">Tip: You can still generate a lip-sync video with a default avatar if you skip uploading.</div>
-                            </div>
-                          )}
-                          {settings.media.avatarStatus === 'processing' && (
-                            <div className="flex items-center space-x-3 text-purple-700">
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              <span>Generating avatar… This may take a few minutes.</span>
-                            </div>
-                          )}
-                          {settings.media.avatarStatus === 'ready' && (
-                            <div className="space-y-4">
-                              <div className="flex items-center space-x-2 text-green-700">
-                                <Check className="w-5 h-5" />
-                                <span>Video avatar is ready.</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <button className="px-3 py-2 bg-gray-100 rounded-lg flex items-center space-x-2">
-                                  <Play className="w-4 h-4" />
-                                  <span>Preview</span>
-                                </button>
-                                <button
-                                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg"
-                                  onClick={() => handleSettingChange('media', 'avatarStatus', 'not_started')}
-                                >
-                                  Re-generate
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          {avatarVideoUrl && (
-                            <div className="mt-4">
-                              <video className="w-full rounded-lg" src={avatarVideoUrl} controls />
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      {/* New consolidated creator */}
+                      {currentPersona ? (
+                        <SimliFaceCreator personaId={currentPersona.id} />
+                      ) : (
+                        <div className="text-sm text-gray-600">Select a persona to create a video avatar.</div>
+                      )}
                     </div>
 
                     {/* Lip-sync generation */}
@@ -1035,13 +951,9 @@ const SettingsPage = () => {
                           onClick={async () => {
                             if (!authToken || !currentPersona) return;
                             try {
-                              setAvatarVideoUrl(null);
                               setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'processing' } }));
                               const r = await generateLipsyncVideo({ token: authToken, personaId: currentPersona.id, text: lipsyncText.trim() });
-                              if (r.video_url) {
-                                setAvatarVideoUrl(r.video_url);
-                                setSettings(prev => ({ ...prev, media: { ...prev.media, avatarStatus: 'ready' } }));
-                              } else if (r.task_id) {
+                              if (r.task_id) {
                                 setAvatarTaskId(r.task_id);
                               }
                             } catch (e: any) {

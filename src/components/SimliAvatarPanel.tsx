@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 
 interface Props {
   authToken: string | null;
+  personaId?: string | null;
   onActiveChange?: (active: boolean) => void;
   modeToggle?: React.ReactNode;
 }
@@ -10,7 +11,7 @@ export interface SimliAvatarHandle {
   attachAudioElement(audioEl: HTMLAudioElement, playLocalOutput?: boolean): Promise<void>;
 }
 
-const SimliAvatarPanel = forwardRef<SimliAvatarHandle, Props>(({ authToken, onActiveChange, modeToggle }, ref) => {
+const SimliAvatarPanel = forwardRef<SimliAvatarHandle, Props>(({ authToken, personaId, onActiveChange, modeToggle }, ref) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -26,8 +27,9 @@ const SimliAvatarPanel = forwardRef<SimliAvatarHandle, Props>(({ authToken, onAc
     setError(null);
     setIsStarting(true);
     try {
-      // Request dev session params
-      const res = await fetch('/.netlify/functions/simli-start-session', {
+      // Request dev session params (prefer persona-specific face when provided)
+      const qs = personaId ? `?persona_id=${encodeURIComponent(personaId)}` : '';
+      const res = await fetch(`/.netlify/functions/simli-start-session${qs}`, {
         method: 'POST',
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined,
       });
@@ -76,6 +78,16 @@ const SimliAvatarPanel = forwardRef<SimliAvatarHandle, Props>(({ authToken, onAc
       try { onActiveChange?.(false); } catch {}
     };
   }, []);
+
+  // Restart when persona changes to pick the correct face
+  useEffect(() => {
+    if (!isActive) return;
+    (async () => {
+      try { await stopSession(); } catch {}
+      try { await startSession(); } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personaId]);
 
   // Expose attach method for lip-syncing arbitrary audio
   useImperativeHandle(ref, () => ({
