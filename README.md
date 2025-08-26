@@ -6,53 +6,8 @@ Repo: https://github.com/swiftflowai/digital_soul_landing
 
 ## System diagram
 
-```mermaid
-flowchart LR
-  classDef box fill:#fff,stroke:#bbb,rx:6,ry:6,color:#1f2937;
-  classDef ext fill:#f8fafc,stroke:#cbd5e1,rx:6,ry:6,color:#334155;
-  classDef svc fill:#fdf2f8,stroke:#db2777,rx:6,ry:6,color:#831843;
-  classDef db fill:#ecfeff,stroke:#06b6d4,rx:6,ry:6,color:#0e7490;
-  classDef fn fill:#eef2ff,stroke:#6366f1,rx:6,ry:6,color:#3730a3;
+<img width="769" height="771" alt="Screenshot 2025-08-26 at 2 16 14 PM" src="https://github.com/user-attachments/assets/ebddf16d-c250-49e8-a3ca-18f347f65acc" />
 
-  subgraph C[Web App (Vite + React, TypeScript, Tailwind)]
-    C1[UI: Chat, Settings, Persona Setup<br/>SimliFaceCreator, PersonaAvatar]:::box
-    C2[State/Hooks: AuthRoleContext,<br/>useStreamedChat, useAudioRecorder]:::box
-    C3[Supabase client: auth session,<br/>signed URLs]:::box
-  end
-
-  subgraph F[Backend-for-Frontend (Netlify Functions)]
-    F1[Auth & Helpers<br/>_lib/auth, _lib/supabase]:::fn
-    F2[Chat & TTS<br/>chat.ts, voice-chat.ts, tts.ts, tts-preview.ts]:::fn
-    F3[Voice Clone<br/>voice-clone-create.ts, voice-clone-status.ts]:::fn
-    F4[Video Avatar (Simli)<br/>generate-faceid.ts, faceid-status.ts,<br/>simli-face-status.ts, simli-start/stop-session.ts,<br/>simli-face-create.ts, simli-face-watch-background.ts]:::fn
-    F5[Heygen Lipsync<br/>avatar-upload.ts, avatar-generate-lipsync.ts, avatar-status.ts]:::fn
-  end
-
-  subgraph S[Supabase]
-    S1[(Auth)]:::db
-    S2[(Postgres)<br/>personas, memberships,<br/>contributions (memories), activities]:::db
-    S3[(Storage: persona-media)<br/>avatar images, signed URLs]:::db
-  end
-
-  subgraph X[External Media Services]
-    X1[Simli API<br/>generateFaceID, status,<br/>live session via simli-client]:::ext
-    X2[Heygen API<br/>lipsync jobs + status]:::ext
-    X3[TTS Provider(s)]:::ext
-  end
-
-  C -->|REST/Fetch| F
-  F -->|Verify session / service role| S1
-  F <--> |R/W| S2
-  F <--> |Upload/list/signed URLs| S3
-
-  F4 --> |generateFaceID / status| X1
-  F4 --> |dev session bootstrap| X1
-  F5 --> |jobs + polling| X2
-  F2 --> |synthesize audio| X3
-
-  C <--> |streamed responses, audio, video| F
-  C <--> |signed URL previews| S3
-```
 
 ## Architecture
 
