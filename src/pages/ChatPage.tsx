@@ -319,9 +319,9 @@ const ChatPage = () => {
   };
 
   const streamBotResponse = (userMessage: string) => {
-    // Ensure we have a valid persona before attempting to chat
-    if (!personaId || !authToken) {
-      console.log("Missing persona data:", { personaId, authToken: !!authToken });
+    // Ensure we have a valid persona before attempting to chat (auth optional for viewer links)
+    if (!personaId) {
+      console.log("Missing persona id for chat");
       return;
     }
     
