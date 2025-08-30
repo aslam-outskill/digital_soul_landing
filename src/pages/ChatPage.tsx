@@ -236,6 +236,7 @@ const ChatPage = () => {
   };
 
   const simliRef = useRef<SimliAvatarHandle | null>(null);
+  const ttsMountRef = useRef<HTMLDivElement | null>(null);
 
   const speakMessage = async (text: string, opts?: { onStart?: () => void }) => {
     try {
@@ -246,9 +247,8 @@ const ChatPage = () => {
         const { audio } = await speakText(authToken, personaId, text, { autoplay: false });
         if (audio) {
           if (isSimliActive) {
-            // Route a copy to Simli (no extra WebAudio output)
-            try { await simliRef.current?.attachAudioElement(audio, false); } catch {}
-            // Play via HTMLAudioElement only to avoid double audio paths
+            // Attach with local output so WebAudio tees to speakers and Simli
+            try { await simliRef.current?.attachAudioElement(audio, true); } catch {}
             try { audio.addEventListener('play', () => { try { opts?.onStart?.(); } catch {} }); } catch {}
             audio.muted = false;
             await audio.play().catch(() => {});
@@ -267,7 +267,7 @@ const ChatPage = () => {
         const { audio } = await speakTextPreview(inviteToken, personaId, text, { autoplay: false });
         if (audio) {
           if (isSimliActive) {
-            try { await simliRef.current?.attachAudioElement(audio, false); } catch {}
+            try { await simliRef.current?.attachAudioElement(audio, true); } catch {}
             try { audio.addEventListener('play', () => { try { opts?.onStart?.(); } catch {} }); } catch {}
             audio.muted = false;
             await audio.play().catch(() => {});
@@ -560,6 +560,7 @@ const ChatPage = () => {
             {/* Simli Avatar (single instance; switches between docked/floating without unmounting) */}
             <div className="lg:col-span-4">
               <div className="bg-white border border-gray-200 rounded-2xl p-3 lg:sticky lg:top-28">
+                <div ref={ttsMountRef} style={{ display: 'none' }} />
                 <FloatingWindow
                   id="simli-avatar"
                   title="Simli Live Avatar"
